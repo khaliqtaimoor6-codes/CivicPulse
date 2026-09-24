@@ -1,13 +1,10 @@
-from app.providers.triage.base import Category, Priority, TriageProvider, TriageResult
+from app.providers.triage.base import TriageResult
+from app.providers.triage.rules import RuleBasedTriage
 
 
 class SimulatedTriage:
 	name = "simulated"
 
 	def triage(self, text: str, location: str) -> TriageResult:
-		return TriageResult(
-			category=Category.other,
-			priority=Priority.normal,
-			summary=" ".join(text.split())[:100],
-			confidence=0.5,
-		)
+		result = RuleBasedTriage().triage(text, location)
+		return result.model_copy(update={"confidence": 0.5})
