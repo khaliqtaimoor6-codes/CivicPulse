@@ -4,13 +4,39 @@ venv/
 __pycache__/
 *.py[cod]
 *.pyc
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+coverage.json
 
-# Node
+# Node and Vite
 node_modules/
 dist/
+.vite/
+npm-debug.log*
 
 # Environment
 .env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
 
 # OS
 .DS_Store
+Thumbs.db
+
+# Documentation evidence media
+docs/evidence/*.mp4
+docs/evidence/*.mov
+docs/evidence/*.avi
+docs/evidence/*.mkv
+docs/evidence/*.webm
+docs/evidence/*.zip
