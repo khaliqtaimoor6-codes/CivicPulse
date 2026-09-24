@@ -12,7 +12,7 @@ from app.providers.triage.simulated import SimulatedTriage
 from app.repositories.complaint_repository import ComplaintRepository
 from app.services.complaint_service import ComplaintService
 
-router = APIRouter(prefix="/api/complaints", tags=["complaints"])
+router = APIRouter(prefix="/complaints", tags=["complaints"])
 
 
 class ComplaintCreate(BaseModel):
