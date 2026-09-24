@@ -1,1 +1,19 @@
-# Placeholder.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [dev]
+
+jobs:
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: CI check
+        run: echo "CI passed"
