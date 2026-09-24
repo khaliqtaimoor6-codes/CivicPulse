@@ -37,11 +37,6 @@ status_enum = postgresql.ENUM(
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    category_enum.create(bind, checkfirst=True)
-    priority_enum.create(bind, checkfirst=True)
-    status_enum.create(bind, checkfirst=True)
-
     op.create_table(
         "complaints",
         sa.Column(
