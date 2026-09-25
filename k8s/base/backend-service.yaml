@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: civicpulse-backend
+  namespace: civicpulse
+  labels:
+    app: civicpulse-backend
+spec:
+  type: ClusterIP
+  selector:
+    app: civicpulse-backend
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
