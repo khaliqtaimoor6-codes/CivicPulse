@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -9,6 +9,7 @@ from app.config import get_settings
 from app.db.session import get_db
 from app.models import Category, Complaint, Priority, Status
 from app.providers.cache.redis_provider import RedisCacheProvider
+from app.providers.rate_limiter.redis_rate_limiter import RedisRateLimiter
 from app.providers.triage.factory import get_triage_provider
 from app.providers.triage.rules import RuleBasedTriage
 from app.repositories.complaint_repository import ComplaintRepository
@@ -55,6 +56,19 @@ class StatusUpdate(BaseModel):
 	status: Status
 
 
+def enforce_rate_limit(request: Request) -> None:
+	settings = get_settings()
+	limiter = RedisRateLimiter(settings.redis_url, settings.rate_limit_per_minute)
+	client_ip = request.client.host if request.client else "unknown"
+	allowed, retry_after = limiter.check(client_ip)
+	if not allowed:
+		raise HTTPException(
+			status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+			detail="Rate limit exceeded",
+			headers={"Retry-After": str(retry_after)},
+		)
+
+
 def get_complaint_service(
 	db_session: Session = Depends(get_db),
 ) -> ComplaintService:
@@ -77,6 +91,7 @@ def get_complaint_service(
 @router.post("", response_model=ComplaintResponse, status_code=status.HTTP_201_CREATED)
 def create_complaint(
 	payload: ComplaintCreate,
+	_: None = Depends(enforce_rate_limit),
 	service: ComplaintService = Depends(get_complaint_service),
 ) -> Complaint:
 	return service.create_complaint(
