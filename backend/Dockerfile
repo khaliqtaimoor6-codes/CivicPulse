@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir \
 	python-dotenv~=1.0.0
 
 COPY app ./app
+COPY scripts ./scripts
 COPY alembic.ini ./
 COPY alembic ./alembic
 
