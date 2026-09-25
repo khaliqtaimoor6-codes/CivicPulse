@@ -31,6 +31,12 @@ export interface ComplaintCreateRequest {
 	reporter_contact?: string;
 }
 
+export interface ComplaintFilters {
+	category?: Category;
+	priority?: Priority;
+	status?: Status;
+}
+
 export interface StatsResponse {
 	total: number;
 	by_category: Record<Category, number>;

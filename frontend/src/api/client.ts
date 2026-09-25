@@ -1,8 +1,7 @@
 import type {
-	Category,
 	Complaint,
 	ComplaintCreateRequest,
-	Priority,
+	ComplaintFilters,
 	ProviderMetaResponse,
 	StatsResponse,
 	Status,
@@ -28,12 +27,6 @@ export class StatusTransitionError extends ApiError {
 		this.name = "StatusTransitionError";
 	}
 }
-
-export type ComplaintFilters = {
-	category?: Category;
-	priority?: Priority;
-	status?: Status;
-};
 
 async function parseBody(response: Response): Promise<ErrorBody | unknown> {
 	const contentType = response.headers.get("content-type") ?? "";
