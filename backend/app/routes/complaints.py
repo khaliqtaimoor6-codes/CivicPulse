@@ -1,16 +1,23 @@
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db.session import get_db
 from app.models import Category, Complaint, Priority, Status
-from app.providers.triage.simulated import SimulatedTriage
+from app.providers.cache.redis_provider import RedisCacheProvider
+from app.providers.triage.factory import get_triage_provider
+from app.providers.triage.rules import RuleBasedTriage
 from app.repositories.complaint_repository import ComplaintRepository
-from app.services.complaint_service import ComplaintService
+from app.services.complaint_service import (
+	ComplaintNotFoundError,
+	ComplaintService,
+	InvalidTransitionError,
+)
+from app.services.triage_service import TriageService
 
 router = APIRouter(prefix="/complaints", tags=["complaints"])
 
@@ -40,13 +47,31 @@ class ComplaintResponse(BaseModel):
 class ComplaintListResponse(BaseModel):
 	items: list[ComplaintResponse]
 	total: int
+	page: int
+	page_size: int
+
+
+class StatusUpdate(BaseModel):
+	status: Status
 
 
 def get_complaint_service(
 	db_session: Session = Depends(get_db),
 ) -> ComplaintService:
-	get_settings()
-	return ComplaintService(ComplaintRepository(db_session), SimulatedTriage())
+	settings = get_settings()
+	provider = get_triage_provider(settings)
+	cache = RedisCacheProvider(settings.redis_url)
+	triage_service = TriageService(
+		provider,
+		RuleBasedTriage(),
+		cache,
+	)
+	return ComplaintService(
+		ComplaintRepository(db_session),
+		provider,
+		triage_service,
+		stats_cache=cache.redis,
+	)
 
 
 @router.post("", response_model=ComplaintResponse, status_code=status.HTTP_201_CREATED)
@@ -72,9 +97,47 @@ def get_complaint(
 	return complaint
 
 
+@router.patch("/{id}/status", response_model=ComplaintResponse)
+def update_complaint_status(
+	id: UUID,
+	payload: StatusUpdate,
+	service: ComplaintService = Depends(get_complaint_service),
+) -> Complaint:
+	try:
+		return service.transition_status(id, payload.status)
+	except InvalidTransitionError as error:
+		raise HTTPException(
+			status_code=status.HTTP_409_CONFLICT,
+			detail=str(error),
+		) from error
+	except ComplaintNotFoundError as error:
+		raise HTTPException(
+			status_code=status.HTTP_404_NOT_FOUND,
+			detail="Complaint not found",
+		) from error
+
+
 @router.get("", response_model=ComplaintListResponse)
 def list_complaints(
+	category: Category | None = None,
+	priority: Priority | None = None,
+	complaint_status: Status | None = Query(default=None, alias="status"),
+	page: int = Query(default=1, ge=1),
+	page_size: int = Query(default=20, ge=1, le=100),
 	service: ComplaintService = Depends(get_complaint_service),
 ) -> ComplaintListResponse:
-	items, total = service.list_complaints({}, page=1, page_size=100)
-	return ComplaintListResponse(items=items, total=total)
+	items, total = service.list_complaints(
+		{
+			"category": category,
+			"priority": priority,
+			"status": complaint_status,
+		},
+		page=page,
+		page_size=page_size,
+	)
+	return ComplaintListResponse(
+		items=items,
+		total=total,
+		page=page,
+		page_size=page_size,
+	)

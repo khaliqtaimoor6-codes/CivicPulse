@@ -14,7 +14,6 @@ export interface Complaint {
 	id: string;
 	text: string;
 	location: string;
-	reporter_contact: string | null;
 	category: Category;
 	priority: Priority;
 	status: Status;
@@ -29,4 +28,28 @@ export interface ComplaintCreateRequest {
 	text: string;
 	location: string;
 	reporter_contact?: string;
+}
+
+export interface ComplaintFilters {
+	category?: Category;
+	priority?: Priority;
+	status?: Status;
+}
+
+export interface StatsResponse {
+	total: number;
+	by_category: Record<Category, number>;
+	by_priority: Record<Priority, number>;
+	by_status: Record<Status, number>;
+}
+
+export interface TriageOutcome {
+	provider: string;
+	latency_ms: number;
+	was_fallback: boolean;
+}
+
+export interface ProviderMetaResponse {
+	active_provider: string;
+	recent_triages: TriageOutcome[];
 }

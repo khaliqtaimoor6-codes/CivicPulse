@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: civicpulse-backend
+  namespace: civicpulse
+  labels:
+    app: civicpulse-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: civicpulse-backend
+  template:
+    metadata:
+      labels:
+        app: civicpulse-backend
+    spec:
+      containers:
+        - name: backend
+          # CD replaces this placeholder with an immutable image reference later.
+          image: REPLACE_ME:latest
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: civicpulse-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: civicpulse-secrets
+                  key: DATABASE_URL
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: civicpulse-secrets
+                  key: REDIS_URL
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: civicpulse-secrets
+                  key: LLM_API_KEY
+          # Add resources and readiness/liveness probes in the later hardening stage.

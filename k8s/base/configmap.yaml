@@ -1,1 +1,8 @@
-# Placeholder.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: civicpulse-config
+  namespace: civicpulse
+data:
+  TRIAGE_PROVIDER: simulated
+  RATE_LIMIT_PER_MINUTE: "30"
