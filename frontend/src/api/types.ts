@@ -14,7 +14,6 @@ export interface Complaint {
 	id: string;
 	text: string;
 	location: string;
-	reporter_contact: string | null;
 	category: Category;
 	priority: Priority;
 	status: Status;
