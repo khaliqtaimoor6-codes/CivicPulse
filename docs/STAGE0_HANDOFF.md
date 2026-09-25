@@ -51,3 +51,13 @@ transcribed from the assignment PDF and verified line-by-line by both partners.
 - [ ] `dev` branch exists and is the default working branch
 - [ ] GitHub Issues created, one per rubric line being attempted
 - [ ] `.env.example` has no real secrets, only placeholders
+
+## Stage 1 verification
+
+- [x] Backend and frontend enum values match the frozen contract exactly.
+- [x] Frontend Submit, Dashboard, and Stats routes compile successfully.
+- [x] PostgreSQL 16, Redis 7, backend, and frontend Compose services run together.
+- [x] Frontend image builds with Node 22 and nginx; backend image builds with Python 3.12.
+- [x] Host API responds on port 8000 and the frontend is reachable on port 5173.
+- [x] Seed data is idempotent: the second run creates 0 rows and skips 30 existing rows.
+- [x] The Stage 1 frontend branch is merged into `dev` after the backend branch baseline.
