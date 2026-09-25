@@ -18,6 +18,10 @@ function labelForStatus(status: Status): string {
 	return status.replace("_", " ");
 }
 
+function labelForValue(value: string): string {
+	return value.replace("_", " ");
+}
+
 export default function DashboardPage() {
 	const [filters, setFilters] = useState<ComplaintFilters>({});
 	const [page, setPage] = useState(1);
@@ -97,7 +101,7 @@ export default function DashboardPage() {
 					Category
 					<select value={filters.category ?? ""} onChange={(event) => changeFilter("category", event.target.value as Category || undefined)}>
 						<option value="">All</option>
-						{categories.map((category) => <option key={category} value={category}>{labelForStatus(category as Status)}</option>)}
+						{categories.map((category) => <option key={category} value={category}>{labelForValue(category)}</option>)}
 					</select>
 				</label>
 				<label>

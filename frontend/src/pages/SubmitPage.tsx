@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 
 import { createComplaint } from "../api/client";
 import type { Complaint, ComplaintCreateRequest } from "../api/types";
-import heroImage from "../assets/hero.png";
+import heroImage from "../assets/city-street.jpg";
 
 type FormErrors = Partial<Record<keyof ComplaintCreateRequest, string>>;
 
