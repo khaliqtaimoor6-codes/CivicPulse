@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Complaint
+from app.models import Category, Complaint, Priority, Status
 
 
 class ComplaintRepository:
@@ -19,6 +19,29 @@ class ComplaintRepository:
 
 	def get_by_id(self, id: UUID) -> Complaint | None:
 		return self.session.get(Complaint, id)
+
+	def update_status(self, complaint: Complaint, status: Status) -> Complaint:
+		complaint.status = status
+		self.session.flush()
+		self.session.refresh(complaint)
+		return complaint
+
+	def aggregate_stats(self) -> dict:
+		return {
+			"total": self.session.scalar(select(func.count()).select_from(Complaint)) or 0,
+			"by_category": self._grouped_counts(Complaint.category, Category),
+			"by_priority": self._grouped_counts(Complaint.priority, Priority),
+			"by_status": self._grouped_counts(Complaint.status, Status),
+		}
+
+	def _grouped_counts(self, column, enum_type: type) -> dict[str, int]:
+		counts = {member.value: 0 for member in enum_type}
+		rows = self.session.execute(
+			select(column, func.count()).group_by(column)
+		).all()
+		for value, count in rows:
+			counts[value.value] = count
+		return counts
 
 	def list(
 		self,
