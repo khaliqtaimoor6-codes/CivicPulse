@@ -44,7 +44,7 @@ def override_complaint_service() -> ComplaintService:
     return ComplaintService(UnusedRepository(), provider)
 
 
-def test_provider_failure_falls_back_to_rules() -> None:
+def test_provider_failure_falls_back_to_rules(caplog) -> None:
     app.dependency_overrides[get_complaint_service] = override_complaint_service
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
@@ -58,5 +58,11 @@ def test_provider_failure_falls_back_to_rules() -> None:
 
         assert response.status_code == 201
         assert response.json()["triaged_by"] == "rules:fallback"
+        fallback_records = [record for record in caplog.records if record.message == "triage_fallback"]
+        assert fallback_records
+        assert fallback_records[-1].levelname == "WARNING"
+        assert fallback_records[-1].primary_provider == "always_raise"
+        assert fallback_records[-1].exception_class == "RuntimeError"
+        assert fallback_records[-1].complaint_id == response.json()["id"]
     finally:
         app.dependency_overrides.clear()

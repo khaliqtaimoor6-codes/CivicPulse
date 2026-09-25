@@ -1,4 +1,5 @@
 from uuid import UUID
+import logging
 
 from app.models import Complaint
 from app.models import Status
@@ -6,6 +7,8 @@ from app.providers.triage.base import TriageProvider
 from app.providers.triage.rules import RuleBasedTriage
 from app.repositories.complaint_repository import ComplaintRepository
 from app.services.triage_service import TriageService
+
+logger = logging.getLogger("civicpulse")
 
 TRANSITIONS: dict[str, set[str]] = {
 	"open": {"in_progress", "rejected"},
@@ -75,6 +78,15 @@ class ComplaintService:
 				"triage_latency_ms": self.triage_service.last_latency_ms,
 			}
 		)
+		if self.triage_service.last_fallback_error is not None:
+			logger.warning(
+				"triage_fallback",
+				extra={
+					"complaint_id": str(complaint.id),
+					"primary_provider": self.triage_service.last_fallback_provider,
+					"exception_class": type(self.triage_service.last_fallback_error).__name__,
+				},
+			)
 		self._invalidate_stats_cache()
 		return complaint
 

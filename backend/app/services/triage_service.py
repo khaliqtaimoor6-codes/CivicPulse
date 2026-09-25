@@ -23,8 +23,12 @@ class TriageService:
 		self.cache = cache
 		self.timeout_seconds = timeout_seconds
 		self.last_latency_ms = 0
+		self.last_fallback_error: Exception | None = None
+		self.last_fallback_provider: str | None = None
 
 	def triage(self, text: str, location: str) -> tuple[TriageResult, str]:
+		self.last_fallback_error = None
+		self.last_fallback_provider = None
 		cached_result = self.cache.get_triage_result(text, location)
 		if cached_result is not None:
 			self.last_latency_ms = 0
@@ -40,7 +44,9 @@ class TriageService:
 			except Exception:
 				pass
 			triaged_by = self.primary_provider.name
-		except Exception:
+		except Exception as error:
+			self.last_fallback_error = error
+			self.last_fallback_provider = self.primary_provider.name
 			result = self.fallback_provider.triage(text, location)
 		finally:
 			self.last_latency_ms = int((perf_counter() - started_at) * 1000)
