@@ -7,13 +7,123 @@ on:
     branches: [dev]
 
 jobs:
-  ci:
-    name: CI
+  lint-and-type:
+    name: Lint and type-check
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: CI check
-        run: echo "CI passed"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend tooling
+        working-directory: backend
+        run: python -m pip install ".[dev]" ruff==0.11.2 mypy==1.15.0
+
+      - name: Ruff
+        working-directory: backend
+        run: ruff check app tests
+
+      - name: Mypy
+        working-directory: backend
+        run: mypy --explicit-package-bases --follow-imports=skip app/providers/triage
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: ESLint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: TypeScript
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+  test-backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    env:
+      TRIAGE_PROVIDER: simulated
+      DATABASE_URL: postgresql+psycopg2://civicpulse:civicpulse_ci_password@localhost:5432/civicpulse
+      REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: civicpulse
+          POSTGRES_PASSWORD: civicpulse_ci_password
+          POSTGRES_DB: civicpulse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U civicpulse -d civicpulse"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: python -m pip install ".[dev]"
+
+      - name: Run migrations
+        working-directory: backend
+        run: alembic upgrade head
+
+      - name: Run backend tests
+        working-directory: backend
+        run: pytest --cov=app --cov-fail-under=65
+
+  test-frontend:
+    name: Frontend tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run Vitest when configured
+        working-directory: frontend
+        run: |
+          if node -e "process.exit(require('./package.json').scripts?.test ? 0 : 1)"; then
+            npm test -- --run
+          else
+            echo "No Vitest test script is configured yet; skipping until frontend tests land."
+          fi
