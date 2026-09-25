@@ -11,7 +11,10 @@ RUN pip install --no-cache-dir \
 	psycopg2-binary~=2.9.0 \
 	"pydantic>=2,<3" \
 	pydantic-settings~=2.6.0 \
-	python-dotenv~=1.0.0
+	python-dotenv~=1.0.0 \
+	"groq~=1.7.0" \
+	"redis~=5.2.0" \
+	"prometheus-client~=0.21.0"
 
 COPY app ./app
 COPY scripts ./scripts
