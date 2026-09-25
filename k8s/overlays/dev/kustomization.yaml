@@ -3,6 +3,13 @@ kind: Kustomization
 namespace: civicpulse
 resources:
   - ../../base
+images:
+  - name: ghcr.io/khaliqtaimoor6-codes/civicpulse-backend
+    newName: civicpulse-backend
+    newTag: dev
+  - name: ghcr.io/khaliqtaimoor6-codes/civicpulse-frontend
+    newName: civicpulse-frontend
+    newTag: dev
 patches:
   - target:
       group: apps
