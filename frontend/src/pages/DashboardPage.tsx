@@ -7,12 +7,6 @@ const PAGE_SIZE = 20;
 const categories: Category[] = ["water", "electricity", "sanitation", "roads", "streetlights", "other"];
 const priorities: Priority[] = ["high", "normal", "low"];
 const statuses: Status[] = ["open", "in_progress", "resolved", "rejected"];
-const transitions: Record<Status, Status[]> = {
-	open: ["in_progress", "rejected"],
-	in_progress: ["resolved", "rejected"],
-	resolved: [],
-	rejected: [],
-};
 
 function labelForStatus(status: Status): string {
 	return status.replace("_", " ");
@@ -137,16 +131,21 @@ export default function DashboardPage() {
 							<p>{complaint.location}</p>
 						</div>
 						<div className="complaint-actions">
-							{transitions[complaint.status].map((nextStatus) => {
+							{statuses.map((nextStatus) => {
 								const actionKey = `${complaint.id}:${nextStatus}`;
+								const isCurrentStatus = complaint.status === nextStatus;
 								return (
 									<button
 										key={nextStatus}
 										type="button"
-										disabled={pendingTransition !== null}
+										disabled={isCurrentStatus || pendingTransition !== null}
 										onClick={() => handleTransition(complaint, nextStatus)}
 									>
-										{pendingTransition === actionKey ? "Updating..." : `Move to ${labelForStatus(nextStatus)}`}
+										{isCurrentStatus
+											? `Current: ${labelForStatus(nextStatus)}`
+											: pendingTransition === actionKey
+												? "Updating..."
+												: `Move to ${labelForStatus(nextStatus)}`}
 									</button>
 								);
 							})}
