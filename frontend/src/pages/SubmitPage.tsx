@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 
-import type { ComplaintCreateRequest } from "../api/types";
+import { createComplaint } from "../api/client";
+import type { Complaint, ComplaintCreateRequest } from "../api/types";
 
 type FormErrors = Partial<Record<keyof ComplaintCreateRequest, string>>;
 
@@ -25,8 +26,10 @@ export default function SubmitPage() {
 	const [reporterContact, setReporterContact] = useState("");
 	const [errors, setErrors] = useState<FormErrors>({});
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [submitError, setSubmitError] = useState<string | null>(null);
+	const [submittedComplaint, setSubmittedComplaint] = useState<Complaint | null>(null);
 
-	function handleSubmit(event: FormEvent<HTMLFormElement>) {
+	async function handleSubmit(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
 
 		const payload: ComplaintCreateRequest = {
@@ -42,9 +45,15 @@ export default function SubmitPage() {
 		}
 
 		setIsSubmitting(true);
-		console.log(payload);
-		// TODO: Stage 2 wire to api/client.ts
-		window.setTimeout(() => setIsSubmitting(false), 500);
+		setSubmitError(null);
+		try {
+			const complaint = await createComplaint(payload);
+			setSubmittedComplaint(complaint);
+		} catch (error) {
+			setSubmitError(error instanceof Error ? error.message : String(error));
+		} finally {
+			setIsSubmitting(false);
+		}
 	}
 
 	function updateText(value: string) {
@@ -60,6 +69,8 @@ export default function SubmitPage() {
 	return (
 		<main>
 			<h1>Submit a complaint</h1>
+			{submitError && <p role="alert">{submitError}</p>}
+			{isSubmitting && <p role="status" aria-live="polite">Analyzing complaint...</p>}
 			<form onSubmit={handleSubmit} noValidate>
 				<div>
 					<label htmlFor="complaint-text">Complaint</label>
@@ -107,9 +118,19 @@ export default function SubmitPage() {
 				</div>
 
 				<button type="submit" disabled={isSubmitting} aria-busy={isSubmitting}>
-					{isSubmitting ? "Submitting..." : "Submit complaint"}
+					{isSubmitting ? "Analyzing..." : "Submit complaint"}
 				</button>
 			</form>
+
+			{submittedComplaint && (
+				<section aria-live="polite">
+					<h2>Triage result</h2>
+					<p><strong>Category:</strong> {submittedComplaint.category}</p>
+					<p><strong>Priority:</strong> {submittedComplaint.priority}</p>
+					<p><strong>AI summary:</strong> {submittedComplaint.ai_summary ?? "No summary returned."}</p>
+					<p><strong>Triaged by:</strong> {submittedComplaint.triaged_by}</p>
+				</section>
+			)}
 		</main>
 	);
 }
