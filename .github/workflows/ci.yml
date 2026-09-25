@@ -7,13 +7,263 @@ on:
     branches: [dev]
 
 jobs:
-  ci:
-    name: CI
+  lint-and-type:
+    name: Lint and type-check
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: CI check
-        run: echo "CI passed"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend tooling
+        working-directory: backend
+        run: python -m pip install ".[dev]" ruff==0.11.2 mypy==1.15.0
+
+      - name: Ruff
+        working-directory: backend
+        run: ruff check app tests
+
+      - name: Mypy
+        working-directory: backend
+        run: mypy --explicit-package-bases --follow-imports=skip app/providers/triage
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: ESLint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: TypeScript
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+  test-backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    env:
+      TRIAGE_PROVIDER: simulated
+      DATABASE_URL: postgresql+psycopg2://civicpulse:civicpulse_ci_password@localhost:5432/civicpulse
+      REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: civicpulse
+          POSTGRES_PASSWORD: civicpulse_ci_password
+          POSTGRES_DB: civicpulse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U civicpulse -d civicpulse"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: python -m pip install ".[dev]"
+
+      - name: Run migrations
+        working-directory: backend
+        run: alembic upgrade head
+
+      - name: Run backend tests
+        working-directory: backend
+        run: pytest --cov=app --cov-fail-under=65
+
+  test-frontend:
+    name: Frontend tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run Vitest when configured
+        working-directory: frontend
+        run: |
+          if node -e "process.exit(require('./package.json').scripts?.test ? 0 : 1)"; then
+            npm test -- --run
+          else
+            echo "No Vitest test script is configured yet; skipping until frontend tests land."
+          fi
+
+  build:
+    name: Build images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -t civicpulse-backend:ci ./backend
+
+      - name: Build frontend image
+        run: docker build -t civicpulse-frontend:ci ./frontend
+
+      - name: Export images
+        run: |
+          docker save civicpulse-backend:ci -o civicpulse-backend.tar
+          docker save civicpulse-frontend:ci -o civicpulse-frontend.tar
+
+      - name: Upload image artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: civicpulse-images
+          path: |
+            civicpulse-backend.tar
+            civicpulse-frontend.tar
+          retention-days: 1
+
+  scan:
+    name: Scan images
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download image artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: civicpulse-images
+
+      - name: Load images
+        run: |
+          docker load -i civicpulse-backend.tar
+          docker load -i civicpulse-frontend.tar
+
+      - name: Scan backend image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: civicpulse-backend:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+
+      - name: Scan frontend image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: civicpulse-frontend:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+
+  manifests:
+    name: Validate manifests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install kustomize
+        run: |
+          curl -fsSL https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.6.0/kustomize_v5.6.0_linux_amd64.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Install kubeconform
+        run: |
+          curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP" kubeconform
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Build and validate production manifests
+        run: kustomize build k8s/overlays/prod | kubeconform -strict -summary -kubernetes-version 1.31.0
+
+  integration:
+    name: Integration smoke test
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start Compose stack and run smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup() {
+            docker compose down -v --remove-orphans
+          }
+          trap cleanup EXIT
+
+          docker compose up -d --build
+
+          deadline=$((SECONDS + 120))
+          until docker compose exec -T backend alembic upgrade head; do
+            if (( SECONDS >= deadline )); then
+              echo "Timed out waiting for database migrations" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+
+          until curl --fail --silent http://localhost:8000/ready > /dev/null; do
+            if (( SECONDS >= deadline )); then
+              echo "Timed out waiting for /ready" >&2
+              docker compose ps
+              exit 1
+            fi
+            sleep 2
+          done
+
+          complaint=$(curl --fail --silent --request POST http://localhost:8000/api/complaints \
+            --header 'Content-Type: application/json' \
+            --data '{"text":"A large pothole is blocking the road near the civic center","location":"Civic Center"}')
+          complaint_id=$(jq -r '.id' <<< "$complaint")
+          test -n "$complaint_id"
+          test "$complaint_id" != "null"
+
+          fetched=$(curl --fail --silent "http://localhost:8000/api/complaints/$complaint_id")
+          category=$(jq -r '.category' <<< "$fetched")
+          case "$category" in
+            water|electricity|sanitation|roads|streetlights|other) ;;
+            *) echo "Invalid category: $category" >&2; exit 1 ;;
+          esac
+
+          curl --fail --silent --dump-header /tmp/stats-first.headers \
+            --output /tmp/stats-first.json http://localhost:8000/api/stats
+          curl --fail --silent --dump-header /tmp/stats-second.headers \
+            --output /tmp/stats-second.json http://localhost:8000/api/stats
+          grep -iq '^x-cache: MISS' /tmp/stats-first.headers
+          grep -iq '^x-cache: HIT' /tmp/stats-second.headers

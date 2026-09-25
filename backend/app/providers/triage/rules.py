@@ -1,4 +1,4 @@
-from .base import Category, Priority, TriageProvider, TriageResult
+from .base import Category, Priority, TriageResult
 
 
 class RuleBasedTriage:
