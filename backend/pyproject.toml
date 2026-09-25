@@ -12,6 +12,7 @@ dependencies = [
 	"pydantic-settings~=2.6.0",
 	"python-dotenv~=1.0.0",
 	"groq~=1.7.0",
+	"redis~=5.2.0",
 ]
 
 [project.optional-dependencies]
