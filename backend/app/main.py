@@ -25,14 +25,16 @@ request_id_context: contextvars.ContextVar[str] = contextvars.ContextVar(
 
 class JsonFormatter(logging.Formatter):
 	def format(self, record: logging.LogRecord) -> str:
-		return json.dumps(
-			{
-				"timestamp": datetime.now(timezone.utc).isoformat(),
-				"level": record.levelname,
-				"request_id": getattr(record, "request_id", request_id_context.get()),
-				"message": record.getMessage(),
-			}
-		)
+		payload = {
+			"timestamp": datetime.now(timezone.utc).isoformat(),
+			"level": record.levelname,
+			"request_id": getattr(record, "request_id", request_id_context.get()),
+			"message": record.getMessage(),
+		}
+		for field in ("complaint_id", "primary_provider", "exception_class"):
+			if hasattr(record, field):
+				payload[field] = getattr(record, field)
+		return json.dumps(payload)
 
 
 def configure_logging() -> None:
