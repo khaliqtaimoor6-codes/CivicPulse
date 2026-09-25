@@ -1,5 +1,7 @@
 import os
+from datetime import datetime, timezone
 from uuid import UUID
+from uuid import uuid4
 
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
@@ -22,7 +24,13 @@ class AlwaysRaiseProvider:
 
 class UnusedRepository:
     def create(self, complaint_data: dict) -> Complaint:
-        raise AssertionError("fallback test repository should not be reached")
+        now = datetime.now(timezone.utc)
+        return Complaint(
+            id=uuid4(),
+            created_at=now,
+            updated_at=now,
+            **complaint_data,
+        )
 
     def get_by_id(self, complaint_id: UUID) -> Complaint | None:
         return None

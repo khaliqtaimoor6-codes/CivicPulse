@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Complaint
+from app.models import Complaint, Status
 
 
 class ComplaintRepository:
@@ -19,6 +19,12 @@ class ComplaintRepository:
 
 	def get_by_id(self, id: UUID) -> Complaint | None:
 		return self.session.get(Complaint, id)
+
+	def update_status(self, complaint: Complaint, status: Status) -> Complaint:
+		complaint.status = status
+		self.session.flush()
+		self.session.refresh(complaint)
+		return complaint
 
 	def list(
 		self,
