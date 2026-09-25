@@ -60,15 +60,17 @@ def get_complaint_service(
 ) -> ComplaintService:
 	settings = get_settings()
 	provider = get_triage_provider(settings)
+	cache = RedisCacheProvider(settings.redis_url)
 	triage_service = TriageService(
 		provider,
 		RuleBasedTriage(),
-		RedisCacheProvider(settings.redis_url),
+		cache,
 	)
 	return ComplaintService(
 		ComplaintRepository(db_session),
 		provider,
 		triage_service,
+		stats_cache=cache.redis,
 	)
 
 

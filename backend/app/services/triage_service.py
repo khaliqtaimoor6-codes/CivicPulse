@@ -3,9 +3,11 @@ import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from time import perf_counter
 
+from app.metrics import TRIAGE_FALLBACK_COUNT, TRIAGE_LATENCY
 from app.providers.cache.redis_provider import RedisCacheProvider
 from app.providers.triage.base import TriageProvider, TriageResult
 from app.providers.triage.rules import RuleBasedTriage
+from app.routes.meta import record_triage
 
 
 class TriageService:
@@ -26,18 +28,31 @@ class TriageService:
 		cached_result = self.cache.get_triage_result(text, location)
 		if cached_result is not None:
 			self.last_latency_ms = 0
+			self._record_metrics(self.primary_provider.name)
 			return cached_result, self.primary_provider.name
 
 		started_at = perf_counter()
+		triaged_by = "rules:fallback"
 		try:
 			result = self._triage_primary(text, location)
-			self.cache.set_triage_result(text, location, result)
-			return result, self.primary_provider.name
+			try:
+				self.cache.set_triage_result(text, location, result)
+			except Exception:
+				pass
+			triaged_by = self.primary_provider.name
 		except Exception:
 			result = self.fallback_provider.triage(text, location)
-			return result, "rules:fallback"
 		finally:
 			self.last_latency_ms = int((perf_counter() - started_at) * 1000)
+			self._record_metrics(triaged_by)
+
+		return result, triaged_by
+
+	def _record_metrics(self, provider: str) -> None:
+		TRIAGE_LATENCY.observe(self.last_latency_ms / 1000)
+		if provider == "rules:fallback":
+			TRIAGE_FALLBACK_COUNT.inc()
+		record_triage(provider, self.last_latency_ms)
 
 	def _triage_primary(self, text: str, location: str) -> TriageResult:
 		try:

@@ -40,8 +40,10 @@ class ComplaintService:
 		repository: ComplaintRepository,
 		triage_provider: TriageProvider | None = None,
 		triage_service: TriageService | None = None,
+		stats_cache=None,
 	) -> None:
 		self.repository = repository
+		self.stats_cache = stats_cache
 		if triage_service is None:
 			if triage_provider is None:
 				raise ValueError("A triage provider or triage service is required")
@@ -60,7 +62,7 @@ class ComplaintService:
 	) -> Complaint:
 		triage_result, triaged_by = self.triage_service.triage(text, location)
 
-		return self.repository.create(
+		complaint = self.repository.create(
 			{
 				"text": text,
 				"location": location,
@@ -73,6 +75,8 @@ class ComplaintService:
 				"triage_latency_ms": self.triage_service.last_latency_ms,
 			}
 		)
+		self._invalidate_stats_cache()
+		return complaint
 
 	def get_complaint(self, id: UUID) -> Complaint | None:
 		return self.repository.get_by_id(id)
@@ -95,4 +99,10 @@ class ComplaintService:
 		if attempted_status not in TRANSITIONS[current_status]:
 			raise InvalidTransitionError(current_status, attempted_status)
 
-		return self.repository.update_status(complaint, new_status)
+		updated_complaint = self.repository.update_status(complaint, new_status)
+		self._invalidate_stats_cache()
+		return updated_complaint
+
+	def _invalidate_stats_cache(self) -> None:
+		if self.stats_cache is not None:
+			self.stats_cache.delete("stats:aggregate")
