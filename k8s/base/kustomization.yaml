@@ -9,3 +9,9 @@ resources:
   - frontend-deployment.yaml
   - backend-service.yaml
   - frontend-service.yaml
+  - postgres-statefulset.yaml
+  - redis-deployment.yaml
+  - redis-service.yaml
+  - ingress.yaml
+  - backend-hpa.yaml
+  - backend-pdb.yaml
