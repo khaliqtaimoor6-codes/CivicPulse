@@ -160,6 +160,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download image artifacts
         uses: actions/download-artifact@v4
         with:
@@ -171,6 +174,8 @@ jobs:
           docker load -i civicpulse-frontend.tar
 
       - name: Scan backend image
+        id: scan-backend
+        continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: civicpulse-backend:ci
@@ -178,8 +183,11 @@ jobs:
           exit-code: "1"
           ignore-unfixed: true
           severity: HIGH,CRITICAL
+          trivyignores: .trivyignore.yaml
 
       - name: Scan frontend image
+        id: scan-frontend
+        continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: civicpulse-frontend:ci
@@ -187,6 +195,20 @@ jobs:
           exit-code: "1"
           ignore-unfixed: true
           severity: HIGH,CRITICAL
+          trivyignores: .trivyignore.yaml
+
+      # Both scans above run to completion regardless of findings, so a backend
+      # CVE can no longer hide the state of the frontend image. The gate is
+      # applied here instead, once, with both results in hand.
+      - name: Fail if either image has HIGH or CRITICAL findings
+        if: steps.scan-backend.outcome == 'failure' || steps.scan-frontend.outcome == 'failure'
+        run: |
+          echo "::error::HIGH or CRITICAL vulnerabilities found in a built image."
+          echo "Backend scan:  ${{ steps.scan-backend.outcome }}"
+          echo "Frontend scan: ${{ steps.scan-frontend.outcome }}"
+          echo "See the scan tables above for the specific findings, and"
+          echo ".trivyignore.yaml for accepted, dated exceptions."
+          exit 1
 
   manifests:
     name: Validate manifests
