@@ -65,8 +65,21 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.50"
-          memory: 512M
+          # Units: this file is decimal throughout (Compose's validator rejects
+          # the binary `Mi` suffix outright -- "invalid suffix: 'mi'"), so every
+          # limit below is a power-of-1000 M. k8s manifests use binary Mi.
+          # Nominal values are kept equal to the k8s figure, which makes each
+          # compose limit ~4.9% tighter than its k8s counterpart:
+          #   postgres 512M  <->  512Mi      redis 256M    <->  256Mi
+          #   backend  320M  <->  320Mi      frontend 128M  <->  128Mi
+          # k8s is authoritative; these are a lower bound, not a second source.
+          #
+          # CPU 400m: the live VPA recommender reports 379m CPU / 250Mi memory
+          # against this workload, so CPU carries headroom over that. Memory
+          # stays at the tuned 320Mi -- CPU was the tight dimension, not memory.
+          # See k8s/overlays/dev/kustomization.yaml and the VPA (updateMode: "Off").
+          cpus: "0.40"
+          memory: 320M
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
       interval: 10s
