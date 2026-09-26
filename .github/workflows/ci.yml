@@ -6,10 +6,18 @@ on:
   push:
     branches: [dev]
 
+# Least privilege, as the brief requires: the default GITHUB_TOKEN is broader
+# than this workflow needs. No CI job pushes a package or writes to the repo,
+# so every job here needs read access to the source and nothing else.
+permissions:
+  contents: read
+
 jobs:
   lint-and-type:
     name: Lint and type-check
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,6 +60,8 @@ jobs:
 
   test-backend:
     name: Backend tests
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     env:
       TRIAGE_PROVIDER: simulated
@@ -103,6 +113,8 @@ jobs:
 
   test-frontend:
     name: Frontend tests
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -130,6 +142,8 @@ jobs:
 
   build:
     name: Build images
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -158,6 +172,8 @@ jobs:
   scan:
     name: Scan images
     needs: build
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -212,6 +228,8 @@ jobs:
 
   manifests:
     name: Validate manifests
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -238,6 +256,8 @@ jobs:
   integration:
     name: Integration smoke test
     needs: build
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -314,6 +334,8 @@ jobs:
       - scan
       - manifests
       - integration
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Report and enforce every job result

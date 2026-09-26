@@ -13,6 +13,11 @@ jobs:
   release:
     name: Publish semver release
     runs-on: ubuntu-latest
+    # Repeated at job level so the grant is explicit where it is used rather
+    # than inherited, matching the least-privilege pattern in ci.yml and cd.yml.
+    permissions:
+      contents: write
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
