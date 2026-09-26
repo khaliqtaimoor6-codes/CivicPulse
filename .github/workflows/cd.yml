@@ -4,10 +4,17 @@ on:
   push:
     branches: [main]
 
+# Default to the least privilege for every job. build-push and deploy-k8s widen
+# this individually, and only for the registry access they actually need.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Re-verify merged main
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     env:
       TRIAGE_PROVIDER: simulated
       DATABASE_URL: postgresql+psycopg2://civicpulse:civicpulse_ci_password@localhost:5432/civicpulse
@@ -34,6 +41,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Lint and type-check
+        working-directory: backend
+        run: |
+          python -m pip install ".[dev]" ruff==0.11.2 mypy==1.15.0
+          ruff check app tests
+          mypy --explicit-package-bases --follow-imports=skip app/providers/triage
       - name: Backend tests
         working-directory: backend
         run: |
@@ -109,35 +122,91 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # Needed to pull the images build-push just published. GHCR packages are
+      # private by default, so without this the rollouts cannot start.
+      packages: read
+    env:
+      # No LLM key exists in CI secrets, so the deployed backend must not expect
+      # one. k8s/base/configmap.yaml also sets simulated; the smoke test asserts
+      # on triaged_by so a silent change of provider is caught rather than assumed.
+      TRIAGE_PROVIDER: simulated
     steps:
       - uses: actions/checkout@v4
-      - uses: helm/kind-action@v1.12.0
-        with:
-          cluster_name: civicpulse
-      - name: Install kustomize
+
+      # k3d is installed from a pinned release tarball rather than a k3d action:
+      # there is no k3d-io/k3d-action repository to pin, and @main would float.
+      # This also matches how kustomize is already installed in this workflow.
+      - name: Install pinned kustomize and k3d
         shell: bash
         run: |
-          curl -fsSL https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.6.0/kustomize_v5.6.0_linux_amd64.tar.gz | tar -xz -C "$RUNNER_TEMP"
+          set -euo pipefail
+          curl -fsSL https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.6.0/kustomize_v5.6.0_linux_amd64.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP"
+          curl -fsSL https://github.com/k3d-io/k3d/releases/download/v5.9.0/k3d-linux-amd64 \
+            -o "$RUNNER_TEMP/k3d"
+          chmod +x "$RUNNER_TEMP/k3d"
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      # k3d, not kind: k8s/base/network-policy.yaml pins the kube-dns ClusterIP
+      # to 10.43.0.10/32, which is the k3s service CIDR. On kind the service CIDR
+      # is 10.96.0.0/16, so that DNS egress rule would not match and the backend
+      # could not resolve postgres or redis. The CNI evaluates egress pre-DNAT,
+      # which is why the ClusterIP has to be allowed explicitly at all.
+      - name: Create ephemeral k3d cluster
+        shell: bash
+        run: |
+          set -euo pipefail
+          k3d cluster create civicpulse \
+            --image rancher/k3s:v1.35.5-k3s1 \
+            --port 80:80@loadbalancer \
+            --wait
+          kubectl config use-context k3d-civicpulse
+          kubectl cluster-info
+          kubectl wait --for=condition=Ready node --all --timeout=120s
+
+      - name: Log in to GHCR for image pulls
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
       - name: Promote immutable image digests
         working-directory: k8s/overlays/prod
         env:
           BACKEND_DIGEST: ${{ needs.build-push.outputs.backend_digest }}
           FRONTEND_DIGEST: ${{ needs.build-push.outputs.frontend_digest }}
         run: |
-          kustomize edit set image ghcr.io/${{ github.repository_owner }}/civicpulse-backend@${BACKEND_DIGEST}
-          kustomize edit set image ghcr.io/${{ github.repository_owner }}/civicpulse-frontend@${FRONTEND_DIGEST}
-      - name: Apply runtime Secret
+          set -euo pipefail
+          kustomize edit set image \
+            "ghcr.io/${{ github.repository_owner }}/civicpulse-backend@${BACKEND_DIGEST}"
+          kustomize edit set image \
+            "ghcr.io/${{ github.repository_owner }}/civicpulse-frontend@${FRONTEND_DIGEST}"
+          echo "deployed commit ${GITHUB_SHA} as immutable digests:"
+          echo "  backend  ${BACKEND_DIGEST}"
+          echo "  frontend ${FRONTEND_DIGEST}"
+
+      # Secret before apply, matching the ordering the manifests require: the
+      # deployments reference civicpulse-secrets, so applying them first would
+      # leave the pods stuck on CreateContainerConfigError.
+      - name: Apply registry credentials and runtime Secret
+        shell: bash
         env:
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
         run: |
+          set -euo pipefail
           test -n "$POSTGRES_PASSWORD"
           test -n "$POSTGRES_USER"
           test -n "$POSTGRES_DB"
           kubectl create namespace civicpulse --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create secret docker-registry ghcr -n civicpulse \
+            --docker-server=ghcr.io \
+            --docker-username="${{ github.actor }}" \
+            --docker-password="${{ secrets.GITHUB_TOKEN }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
           kubectl create secret generic civicpulse-secrets -n civicpulse \
             --from-literal=POSTGRES_USER="$POSTGRES_USER" \
             --from-literal=POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
@@ -146,15 +215,36 @@ jobs:
             --from-literal=REDIS_URL='redis://redis:6379/0' \
             --from-literal=LLM_API_KEY="$LLM_API_KEY" \
             --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Apply manifests
         run: kubectl apply -k k8s/overlays/prod
+
       - name: Wait for rollouts
         run: |
           kubectl rollout status statefulset/postgres -n civicpulse --timeout=180s
+          kubectl rollout status deployment/redis -n civicpulse --timeout=180s
           kubectl rollout status deployment/civicpulse-backend -n civicpulse --timeout=180s
           kubectl rollout status deployment/civicpulse-frontend -n civicpulse --timeout=180s
-          kubectl rollout status deployment/redis -n civicpulse --timeout=180s
-      - name: Smoke test backend
+
+      - name: Smoke test the Ingress
+        shell: bash
+        run: |
+          set -euo pipefail
+          # k3d maps the loadbalancer port, so Traefik answers on localhost and
+          # routes by the Host header declared in k8s/base/ingress.yaml.
+          deadline=$((SECONDS + 90))
+          until curl --fail --silent -H 'Host: civicpulse.local' \
+              http://127.0.0.1/api/meta/providers >/dev/null; do
+            if (( SECONDS >= deadline )); then
+              kubectl get pods -n civicpulse -o wide
+              kubectl logs -n civicpulse deploy/traefik --tail=50 || true
+              exit 1
+            fi
+            sleep 3
+          done
+          echo "ingress routed /api/meta/providers through Traefik"
+
+      - name: Smoke test the API
         shell: bash
         run: |
           set -euo pipefail
@@ -173,5 +263,9 @@ jobs:
           test -n "$id" && test "$id" != null
           fetched=$(curl --fail --silent "http://127.0.0.1:18000/api/complaints/$id")
           jq -e '.category and .priority' <<<"$fetched" >/dev/null
+          # Proves the round trip persisted and that no LLM provider was needed.
+          jq -e '.triaged_by == "simulated"' <<<"$fetched" >/dev/null
+          jq '{id, category, priority, triaged_by, triage_latency_ms}' <<<"$fetched"
+
       - name: Print HPA evidence
         run: kubectl get hpa -n civicpulse
