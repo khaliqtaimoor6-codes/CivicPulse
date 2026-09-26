@@ -30,6 +30,23 @@ To render the same production manifests locally without applying them:
 kustomize build k8s/overlays/prod
 ```
 
+Rotating a value in the runtime Secret does not restart pods on its own, because
+the Secret is not part of the Kustomize resource list and nothing else changes
+the pod template. After rotating a Secret out-of-band, restart the consumers by
+hand:
+
+```bash
+kubectl rollout restart statefulset/postgres -n civicpulse
+kubectl rollout restart deployment/civicpulse-backend -n civicpulse
+```
+
+This is a deliberate scope decision, not an oversight. The CD deploy job was
+reordered to create the Secret and then apply the overlay, and the unconditional
+`rollout restart` was dropped from it: on a normal deploy the new ReplicaSet
+already picks up the current Secret, so the restart was redundant work. The
+trade-off is that the manual step above now exists for the rotation case, which
+CD does not perform. Revisit if automated rotation is ever added.
+
 ## Roll Back
 
 For an active incident, use the fast imperative rollback:
@@ -80,6 +97,9 @@ curl --fail http://127.0.0.1:18000/api/meta/providers
 kubectl logs deployment/civicpulse-backend -n civicpulse --since=15m \
 	| jq -c 'select(.message == "triage_fallback")'
 ```
+
+Run the `curl` check from your host against the port-forward above; the backend
+image ships no `curl`, so `kubectl exec ... -- curl` will not work.
 
 Then verify `TRIAGE_PROVIDER` and the Groq API key in the runtime Secret and
 Deployment environment. Do not print the Secret value:
