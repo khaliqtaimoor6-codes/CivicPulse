@@ -1,4 +1,4 @@
-FROM python:3.12.11-slim-bookworm AS builder
+FROM python:3.12.14-slim-bookworm AS builder
 
 WORKDIR /app
 
@@ -6,7 +6,7 @@ COPY pyproject.toml ./
 RUN python -m venv /opt/venv \
 	&& /opt/venv/bin/pip install --no-cache-dir .
 
-FROM python:3.12.11-slim-bookworm AS runtime
+FROM python:3.12.14-slim-bookworm AS runtime
 
 ENV PATH="/opt/venv/bin:$PATH" \
 	PYTHONDONTWRITEBYTECODE=1 \
