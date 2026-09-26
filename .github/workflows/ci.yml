@@ -208,7 +208,10 @@ jobs:
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
       - name: Build and validate production manifests
-        run: kustomize build k8s/overlays/prod | kubeconform -strict -summary -kubernetes-version 1.31.0
+        # -ignore-missing-schemas skips CRDs that kubeconform ships no built-in
+        # schema for (currently the VerticalPodAutoscaler). Strict validation is
+        # still applied to every resource it does have a schema for.
+        run: kustomize build k8s/overlays/prod | kubeconform -strict -summary -kubernetes-version 1.31.0 -ignore-missing-schemas
 
   integration:
     name: Integration smoke test
