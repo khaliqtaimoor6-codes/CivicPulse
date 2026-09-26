@@ -7,6 +7,11 @@ metadata:
     app: civicpulse-backend
 spec:
   replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: civicpulse-backend
@@ -15,13 +20,48 @@ spec:
       labels:
         app: civicpulse-backend
     spec:
+      terminationGracePeriodSeconds: 30
       containers:
         - name: backend
           # CD replaces this placeholder with an immutable image reference later.
-          image: REPLACE_ME:latest
+          image: ghcr.io/khaliqtaimoor6-codes/civicpulse-backend:placeholder
           ports:
             - name: http
               containerPort: 8000
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - sh
+                  - -c
+                  - sleep 5
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           envFrom:
             - configMapRef:
                 name: civicpulse-config
@@ -41,4 +81,3 @@ spec:
                 secretKeyRef:
                   name: civicpulse-secrets
                   key: LLM_API_KEY
-          # Add resources and readiness/liveness probes in the later hardening stage.

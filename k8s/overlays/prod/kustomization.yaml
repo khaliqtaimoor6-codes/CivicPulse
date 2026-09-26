@@ -3,22 +3,10 @@ kind: Kustomization
 namespace: civicpulse
 resources:
   - ../../base
-patches:
-  - target:
-      group: apps
-      version: v1
-      kind: Deployment
-      name: civicpulse-backend
-    patch: |-
-      - op: replace
-        path: /spec/template/spec/containers/0/image
-        value: civicpulse-backend:ci
-  - target:
-      group: apps
-      version: v1
-      kind: Deployment
-      name: civicpulse-frontend
-    patch: |-
-      - op: replace
-        path: /spec/template/spec/containers/0/image
-        value: civicpulse-frontend:ci
+images:
+  - name: ghcr.io/khaliqtaimoor6-codes/civicpulse-backend
+    newName: ghcr.io/khaliqtaimoor6-codes/civicpulse-backend
+    newTag: sha-PLACEHOLDER
+  - name: ghcr.io/khaliqtaimoor6-codes/civicpulse-frontend
+    newName: ghcr.io/khaliqtaimoor6-codes/civicpulse-frontend
+    newTag: sha-PLACEHOLDER

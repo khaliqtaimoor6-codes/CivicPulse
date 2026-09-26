@@ -18,7 +18,7 @@ spec:
       containers:
         - name: frontend
           # CD replaces this placeholder with an immutable image reference later.
-          image: REPLACE_ME:latest
+          image: ghcr.io/khaliqtaimoor6-codes/civicpulse-frontend:placeholder
           ports:
             - name: http
               containerPort: 80

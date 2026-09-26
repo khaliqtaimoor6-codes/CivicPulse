@@ -1,0 +1,54 @@
+Frontend -> PostgreSQL network isolation test
+captured: 2026-09-26T15:20:26+05:00
+source pod: civicpulse-frontend-774f59bc86-cmzn6  (namespace civicpulse)
+
+NOTE: No NetworkPolicy currently enforces this segmentation at the Kubernetes
+layer -- this differs from the Docker Compose network segmentation
+(internal: true) already implemented and demonstrated in Stage 2/3 Compose
+evidence. Adding a NetworkPolicy is deferred to avoid destabilizing
+frontend->backend connectivity mid-stage; tracked as a known gap.
+
+=== NetworkPolicies present in namespace ===
+No resources found in civicpulse namespace.
+
+=== TEST 1: raw TCP reachability, frontend -> postgres:5432 (expect FAIL/timeout if isolated) ===
+exit_code=0
+
+=== TEST 2: HTTP probe, frontend -> postgres:5432 (expect timeout/refused if isolated) ===
+http_code=000 connect=0.010509
+exit_code=52
+
+=== TEST 3: ICMP, frontend -> postgres IP (expect timeout if isolated) ===
+postgres clusterIP: 10.43.248.222
+exit_code=1
+
+=== CONTROL TEST: frontend -> backend:8000 (should SUCCEED, proves tooling works) ===
+http_code=200
+exit_code=0
+
+=== RESULT INTERPRETATION ===
+TEST 1  exit 0     TCP connection to postgres:5432 was ESTABLISHED. Not isolated.
+TEST 2  exit 52    curl "empty reply from server": Postgres answered on the
+                   PostgreSQL wire protocol, which only happens if the TCP
+                   connection succeeded. Corroborates TEST 1.
+TEST 3  exit 1     ICMP blocked by the k3s CNI default, NOT by any policy.
+                   Inconclusive as isolation evidence.
+CONTROL 200         Frontend -> backend works, so the tooling and DNS are fine;
+                   the reachability in TEST 1 is not a tooling artifact.
+
+Conclusion: at the Kubernetes layer the frontend CAN reach PostgreSQL. The
+expected fail/timeout outcome did not occur, because no NetworkPolicy exists.
+
+=== COMPOSE EQUIVALENT (verified, for contrast) ===
+Both compose.yaml and compose.prod.yaml define:
+
+  network edge:     driver bridge, internal=false
+  network internal: driver bridge, internal=true
+
+  postgres -> ['internal']      redis   -> ['internal']
+  backend  -> ['edge', 'internal']
+  frontend -> ['edge']
+
+So in Compose the frontend is attached only to `edge` and has no route to
+`internal`, where Postgres lives. That segmentation is real and works; it is
+simply not reproduced in the Kubernetes manifests.

@@ -1,1 +1,40 @@
-# Placeholder.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: civicpulse
+resources:
+  - ../../base
+images:
+  - name: ghcr.io/khaliqtaimoor6-codes/civicpulse-backend
+    newName: civicpulse-backend
+    newTag: dev
+  - name: ghcr.io/khaliqtaimoor6-codes/civicpulse-frontend
+    newName: civicpulse-frontend
+    newTag: dev
+patches:
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: civicpulse-backend
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests:
+            cpu: 150m
+            memory: 192Mi
+          limits:
+            cpu: 350m
+            memory: 320Mi
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: civicpulse-frontend
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1

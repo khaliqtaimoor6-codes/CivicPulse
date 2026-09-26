@@ -8,6 +8,7 @@ from time import perf_counter
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
@@ -56,11 +57,13 @@ logger = logging.getLogger("civicpulse")
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
 	application.state.accepting_requests = True
+	logger.info("application_started")
 	try:
 		yield
 	finally:
 		application.state.accepting_requests = False
-		# Uvicorn handles SIGTERM and graceful draining; use --timeout-graceful-shutdown.
+		logger.info("graceful_shutdown_started")
+		# Uvicorn receives SIGTERM, stops accepting sockets, and closes this lifespan.
 
 
 settings = get_settings()
@@ -77,6 +80,12 @@ app.add_middleware(
 
 @app.middleware("http")
 async def request_middleware(request: Request, call_next):
+	if not request.app.state.accepting_requests:
+		return JSONResponse(
+			status_code=503,
+			content={"detail": "Service is draining"},
+			headers={"Connection": "close"},
+		)
 	request_id = request.headers.get("X-Request-ID") or str(uuid4())
 	token = request_id_context.set(request_id)
 	started_at = perf_counter()

@@ -1,25 +1,43 @@
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: civicpulse
       POSTGRES_PASSWORD: civicpulse_dev_password
       POSTGRES_DB: civicpulse
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
     networks:
-      - backend-net
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
     networks:
-      - backend-net
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
 
   backend:
     build: ./backend
+    restart: unless-stopped
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql+psycopg2://civicpulse:civicpulse_dev_password@postgres:5432/civicpulse
       REDIS_URL: redis://redis:6379/0
@@ -29,23 +47,39 @@ services:
     ports:
       - "8000:8000"
     networks:
-      - frontend-net
-      - backend-net
+      - edge
+      - internal
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
 
   frontend:
     build: ./frontend
+    restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     environment:
       BACKEND_HOST: backend:8000
     ports:
       - "5173:80"
     networks:
-      - frontend-net
+      - edge
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider --quiet http://127.0.0.1/ || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
 
 volumes:
-  postgres-data:
+  pgdata:
+  redisdata:
 
 networks:
-  frontend-net:
-  backend-net:
+  edge:
+    driver: bridge
+  internal:
+    driver: bridge
+    internal: true
