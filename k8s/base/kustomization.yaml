@@ -1,1 +1,19 @@
-# Placeholder.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: civicpulse
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - backend-deployment.yaml
+  - frontend-deployment.yaml
+  - backend-service.yaml
+  - frontend-service.yaml
+  - postgres-statefulset.yaml
+  - postgres-service.yaml
+  - redis-deployment.yaml
+  - redis-service.yaml
+  - ingress.yaml
+  - network-policy.yaml
+  - backend-hpa.yaml
+  - backend-pdb.yaml
+  - backend-vpa.yaml

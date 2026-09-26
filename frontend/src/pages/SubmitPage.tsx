@@ -1,7 +1,9 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 
-import type { ComplaintCreateRequest } from "../api/types";
+import { createComplaint } from "../api/client";
+import type { Complaint, ComplaintCreateRequest } from "../api/types";
+import heroImage from "../assets/city-street.jpg";
 
 type FormErrors = Partial<Record<keyof ComplaintCreateRequest, string>>;
 
@@ -25,8 +27,10 @@ export default function SubmitPage() {
 	const [reporterContact, setReporterContact] = useState("");
 	const [errors, setErrors] = useState<FormErrors>({});
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [submitError, setSubmitError] = useState<string | null>(null);
+	const [submittedComplaint, setSubmittedComplaint] = useState<Complaint | null>(null);
 
-	function handleSubmit(event: FormEvent<HTMLFormElement>) {
+	async function handleSubmit(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
 
 		const payload: ComplaintCreateRequest = {
@@ -42,9 +46,15 @@ export default function SubmitPage() {
 		}
 
 		setIsSubmitting(true);
-		console.log(payload);
-		// TODO: Stage 2 wire to api/client.ts
-		window.setTimeout(() => setIsSubmitting(false), 500);
+		setSubmitError(null);
+		try {
+			const complaint = await createComplaint(payload);
+			setSubmittedComplaint(complaint);
+		} catch (error) {
+			setSubmitError(error instanceof Error ? error.message : String(error));
+		} finally {
+			setIsSubmitting(false);
+		}
 	}
 
 	function updateText(value: string) {
@@ -58,10 +68,32 @@ export default function SubmitPage() {
 	}
 
 	return (
-		<main>
-			<h1>Submit a complaint</h1>
-			<form onSubmit={handleSubmit} noValidate>
-				<div>
+		<main className="submit-page">
+			<section className="hero-band">
+				<div className="hero-copy">
+					<p className="eyebrow">A clearer line to city services</p>
+					<h1>Make your block<br /><em>heard.</em></h1>
+					<p className="hero-intro">Tell us what needs attention. CivicPulse routes your report to the right civic team, with a clear status trail from first note to resolution.</p>
+					<a className="text-link" href="#report-form">Start a report <span aria-hidden="true">↘</span></a>
+				</div>
+				<div className="hero-visual">
+					<img src={heroImage} alt="Layered civic signal mark" />
+					<div className="hero-coordinates">40.7128° N<br />74.0060° W</div>
+					<div className="hero-caption"><span /> Live civic intake <strong>01</strong></div>
+				</div>
+			</section>
+
+			<section className="report-section" id="report-form">
+				<div className="section-intro">
+					<p className="eyebrow">01 / New report</p>
+					<h2>What needs attention?</h2>
+					<p>Your report is reviewed, categorized, and sent forward. Specific details help us act faster.</p>
+				</div>
+				<div className="form-column">
+					{submitError && <p className="message error-message" role="alert">{submitError}</p>}
+					{isSubmitting && <p className="message loading-message" role="status" aria-live="polite"><span className="spinner" /> Analyzing your report...</p>}
+					<form id="report-form" onSubmit={handleSubmit} noValidate>
+						<div className="field field-wide">
 					<label htmlFor="complaint-text">Complaint</label>
 					<textarea
 						id="complaint-text"
@@ -74,11 +106,11 @@ export default function SubmitPage() {
 						aria-invalid={Boolean(errors.text)}
 						aria-describedby="complaint-text-help complaint-text-error"
 					/>
-					<div id="complaint-text-help">{text.length} / 2000 characters</div>
+					<div className="field-help" id="complaint-text-help">{text.length} / 2000 characters</div>
 					{errors.text && <p id="complaint-text-error" role="alert">{errors.text}</p>}
 				</div>
 
-				<div>
+				<div className="field">
 					<label htmlFor="complaint-location">Location</label>
 					<input
 						id="complaint-location"
@@ -95,7 +127,7 @@ export default function SubmitPage() {
 					{errors.location && <p id="complaint-location-error" role="alert">{errors.location}</p>}
 				</div>
 
-				<div>
+				<div className="field">
 					<label htmlFor="reporter-contact">Contact information (optional)</label>
 					<input
 						id="reporter-contact"
@@ -107,9 +139,24 @@ export default function SubmitPage() {
 				</div>
 
 				<button type="submit" disabled={isSubmitting} aria-busy={isSubmitting}>
-					{isSubmitting ? "Submitting..." : "Submit complaint"}
+					{isSubmitting ? "Analyzing..." : "Send report"}<span aria-hidden="true">↗</span>
 				</button>
 			</form>
+					<p className="form-note">By submitting, you help build a more responsive city.</p>
+				</div>
+			</section>
+
+			{submittedComplaint && (
+				<section className="result-section" aria-live="polite">
+					<div><p className="eyebrow">02 / Report received</p><h2>Here is what we found.</h2></div>
+					<div className="result-grid">
+						<div><span>Category</span><strong>{submittedComplaint.category}</strong></div>
+						<div><span>Priority</span><strong>{submittedComplaint.priority}</strong></div>
+						<div className="result-summary"><span>AI summary</span><strong>{submittedComplaint.ai_summary ?? "No summary returned."}</strong></div>
+						<div><span>Triaged by</span><strong>{submittedComplaint.triaged_by}</strong></div>
+					</div>
+				</section>
+			)}
 		</main>
 	);
 }

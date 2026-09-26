@@ -1,0 +1,96 @@
+{
+  "_provenance": "Parsed from the k6 run log captured in docs/evidence/k6-clean-run.txt (in-cluster k6 pod, namespace 'loadtest'). k6 was run with --quiet and no --summary-export, so these values are transcribed from its summary block rather than emitted directly as JSON.",
+  "run": {
+    "date": "2026-09-26",
+    "mode": "in-cluster k6 pod",
+    "vus_max": 150,
+    "stages": "2m ramp to 150, 4m hold, 1m down",
+    "image_config_digest": "sha256:93d868f5181c95380f85e04ca0ac29e181cf65b001783b16525051e991349198",
+    "image_manifest_digest": "sha256:86480981383f9a259ed7ef8eedd8e615321e99933bbd569e571fca414d433a17",
+    "backend_resources": {
+      "requests": {
+        "cpu": "150m",
+        "memory": "192Mi"
+      },
+      "limits": {
+        "cpu": "350m",
+        "memory": "320Mi"
+      }
+    },
+    "hpa_target": "60% of 150m = 90m per pod",
+    "rate_limit_per_minute_during_run": 100000,
+    "rate_limit_note": "raised from 30 so 429s would not be counted as http_req_failed; restored to 30 after the run"
+  },
+  "results": {
+    "http_reqs": 47551,
+    "http_reqs_per_sec": 113.210013,
+    "http_req_failed_pct": 0.0,
+    "http_req_failed_count": 0,
+    "checks_pct": 100.0,
+    "checks_total": 47551,
+    "duration_avg_s": 1.04,
+    "duration_median_s": 0.92394,
+    "duration_p90_s": 1.9,
+    "duration_p95_s": 2.2,
+    "duration_max_s": 6.98,
+    "data_received_mb": 34,
+    "data_sent_mb": 19
+  },
+  "thresholds": {
+    "http_req_failed<5%": "PASS (0.00%)",
+    "http_req_duration p(95)<2000ms": "FAIL (2200ms) - load is 6.9x the previous profile; k6 exit code 99 is from this threshold only"
+  },
+  "postgres_connections_during_run": {
+    "samples": 113,
+    "interval_s": 3,
+    "min": 7,
+    "max": 52,
+    "avg": 39.7,
+    "p50": 46,
+    "max_connections": 100,
+    "note": "peak 52 = 52% of the limit, matching the designed 5 conns/pod x 10 pods = 50 ceiling"
+  },
+  "hpa_progression": [
+    {
+      "cpu_utilization_pct": 2,
+      "cpu_average": "3m",
+      "replicas": 2,
+      "desired": 2
+    },
+    {
+      "cpu_utilization_pct": 186,
+      "cpu_average": "279m",
+      "replicas": 6,
+      "desired": 6
+    },
+    {
+      "cpu_utilization_pct": 207,
+      "cpu_average": "311m",
+      "replicas": 10,
+      "desired": 10
+    }
+  ],
+  "backend_ready_replicas_during_run": {
+    "2": 7,
+    "6": 7,
+    "10": 99,
+    "0": 0
+  },
+  "cascade_check": "PASS - zero samples with 0 ready replicas; the pre-fix run drove all 7 pods to 0/1 and the cluster could not self-recover",
+  "comparison_to_previous_capture": {
+    "previous": {
+      "requests": 4943,
+      "req_per_sec": 16.48,
+      "failed_pct": 39.63,
+      "p95_s": 1.48,
+      "outcome": "cascading Postgres max_connections exhaustion at ~7 replicas, all pods 0/1"
+    },
+    "current": {
+      "requests": 47551,
+      "req_per_sec": 113.21,
+      "failed_pct": 0.0,
+      "p95_s": 2.2,
+      "outcome": "stable at 10 replicas, connections bounded at 52/100, no cascade"
+    }
+  }
+}

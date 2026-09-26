@@ -1,0 +1,149 @@
+Frontend -> PostgreSQL network isolation test
+captured: 2026-09-26T20:58:00+05:00
+source pod: civicpulse-frontend-774f59bc86-cmzn6  (namespace civicpulse)
+cluster: k3d-civicpulse (k3s v1.35.5+k3s1, 3 agents)
+
+RESOLVED via NetworkPolicy. See k8s/base/network-policy.yaml. The previous
+finding on this file was "no NetworkPolicy exists, frontend CAN reach
+PostgreSQL" -- that is no longer the case. The k8s layer now enforces the same
+segmentation the Compose `internal: true` bridge always provided.
+
+=== NetworkPolicies present in namespace ===
+  allow-backend-egress-internet        app=civicpulse-backend
+  allow-backend-egress-to-datastores   app=civicpulse-backend
+  allow-backend-to-datastores          app in (postgres,redis)
+  allow-dns-egress                     <all pods>
+  allow-frontend-egress-to-backend     app=civicpulse-frontend
+  allow-frontend-to-backend            app=civicpulse-backend
+  allow-ingress-controller             app in (civicpulse-backend,civicpulse-frontend)
+  default-deny-all                     <all pods>   (Ingress+Egress, no rules)
+
+=== TEST 1: raw TCP reachability, frontend -> postgres:5432 (expect BLOCKED) ===
+exit_code=1
+command terminated with exit code 1
+
+=== TEST 2: raw TCP reachability, frontend -> redis:6379 (expect BLOCKED) ===
+exit_code=1
+command terminated with exit code 1
+
+=== TEST 3: HTTP probe, frontend -> backend:8000/health (expect 200) ===
+http_code=200
+body={"status":"alive"}
+
+=== TEST 4: backend -> postgres:5432 and redis:6379 (expect ALLOWED) ===
+backend -> postgres:5432  ALLOWED   (CONNECTED 10.43.248.222:5432)
+backend -> redis:6379     ALLOWED   (CONNECTED 10.43.167.83:6379)
+live SQL via DATABASE_URL: SELECT 1 => 1
+
+=== TEST 5: backend readiness endpoint ===
+http_code=200
+body={"status":"ready"}
+
+=== TEST 6: end-to-end through the Ingress ===
+/                        -> 200   (frontend HTML, "CivicPulse | City services, clearer")
+/api/meta/providers      -> 200   (live backend JSON; was 502 while only
+                                      default-deny + DNS were applied)
+
+=== TEST 7: pod stability, 60s watch after full policy apply ===
+all pods 1/1 Running, no NotReady, no new restarts
+  civicpulse-backend-*   1/1  restarts 0
+  civicpulse-frontend-*  1/1  restarts 2 (4h33m ago, pre-dates this work)
+  postgres-0             1/1  restarts 1 (4h34m ago, pre-dates this work)
+  redis-*                1/1  restarts 0
+
+=== RESULT INTERPRETATION ===
+TEST 1  exit 1     frontend -> postgres BLOCKED. This is the fix working; the
+                   same command returned exit 0 before the policy existed.
+TEST 2  exit 1     frontend -> redis BLOCKED as well.
+TEST 3  200        frontend -> backend still allowed, so the frontend's
+                   /api proxy in nginx.conf is unaffected.
+TEST 4  ALLOWED    backend retains datastore access, including a real query.
+TEST 5  200        readiness endpoint healthy.
+TEST 6  200        Ingress routes both / and /api end to end.
+TEST 7  stable     no flapping, no crash loop.
+
+Conclusion: the Kubernetes layer now enforces the same segmentation as the
+Compose `internal: true` bridge. The frontend cannot open a socket to
+PostgreSQL or Redis; the backend can reach both; nothing else changed.
+
+=== CNI-SPECIFIC FINDING WORTH AN ENGINEERING-NOTES MENTION: DNS ClusterIP vs podSelector ===
+This is the non-obvious part of getting NetworkPolicy working on k3s, and it
+fails silently.
+
+Pods do not query the CoreDNS pod. /etc/resolv.conf points at the kube-dns
+*Service* ClusterIP (10.43.0.10 on this cluster), so the DNS packet leaves the
+pod addressed to a Service IP, not a pod IP.
+
+A DNS allow-rule written the obvious way -- egress to pods matching
+`k8s-app: kube-dns` in namespace kube-system -- does NOT work here. This CNI
+evaluates egress policy BEFORE DNAT, so a podSelector cannot match a ClusterIP
+destination. With only that rule applied:
+
+  nslookup postgres  ->  *** can't find postgres.svc.cluster.local: NXDOMAIN
+
+while a query sent directly to the CoreDNS *pod* IP (10.42.1.37) got through
+fine, which is what proved the rule was matching the wrong thing rather than
+DNS being broken generally.
+
+The fix is to allow BOTH destinations on port 53 UDP/TCP:
+  - podSelector k8s-app=kube-dns  (correct on a post-DNAT CNI, and covers
+                                  direct-to-pod DNS)
+  - ipBlock for the kube-dns ClusterIP 10.43.0.10/32  (required here)
+
+Re-derive that address if the service CIDR changes:
+  kubectl get svc kube-dns -n kube-system -o jsonpath='{.spec.clusterIP}'
+
+Worth stressing: while DNS was broken in that window, EVERY pod still reported
+1/1 Ready. Readiness probes passed because they were served over
+already-established TCP connections and the probe endpoint did not need a fresh
+name lookup. A pod restart during that window would have failed to start. So
+"all pods Ready" is not evidence that a NetworkPolicy apply was correct -- the
+explicit reachability tests above are.
+
+=== k3s DOES enforce NetworkPolicy (contrary to the common assumption) ===
+The widespread claim is that k3s/flannel does not enforce NetworkPolicy at
+default because plain flannel has no policy engine. That is wrong for k3s: k3s
+runs the policy controller inside the k3s agent unless started with
+--disable-network-policy, and no separate kube-router/flannel pod appears in
+kube-system, which is expected rather than a sign of a missing component.
+
+Verified empirically rather than assumed. With only default-deny-all plus the
+DNS rule applied, frontend->postgres, frontend->redis and backend->postgres all
+became unreachable while all pods stayed Ready. The policy is genuinely being
+enforced.
+
+kubelet -> pod probe traffic is exempt on this cluster: pods stayed 1/1 Ready
+across the whole staged rollout, so no explicit allow for the kubelet is needed
+here. That was the highest-risk item in the change and it did not materialise.
+
+=== HOW THIS WAS APPLIED SAFELY ===
+The full 8-policy file was not applied in one shot. It was staged:
+
+  1. default-deny-all + allow-dns-egress only. Waited 30s, confirmed all pods
+     stayed 1/1 Ready (kubelet probe risk retired) and confirmed traffic was
+     actually being blocked (enforcement proven, not assumed).
+  2. Found and fixed the DNS ClusterIP problem above.
+  3. Applied the remaining 6 allow rules, then re-ran every check.
+
+=== COMPOSE EQUIVALENT (still the reference topology) ===
+Both compose.yaml and compose.prod.yaml define:
+
+  network edge:     driver bridge, internal=false
+  network internal: driver bridge, internal=true
+
+  postgres -> ['internal']      redis   -> ['internal']
+  backend  -> ['edge', 'internal']
+  frontend -> ['edge']
+
+In Compose the frontend is attached only to `edge` and has no route to
+`internal`, where Postgres lives. The NetworkPolicy now reproduces that same
+result at the Kubernetes layer, by omission rather than by attachment: no
+policy grants the frontend egress to postgres or redis, so default-deny
+applies to it.
+
+=== RELATED LIMITATION (not a policy issue) ===
+The Ingress is served inside the cluster network only. This k3d cluster was
+created without `-p 80:80@loadbalancer`, so traefik's LoadBalancer addresses
+(172.22.0.2-5) are not reachable from the WSL host or a browser. The Ingress
+itself is healthy and routes correctly; host-side access needs the port
+mapping when the cluster is recreated for a clean final test.

@@ -1,1 +1,30 @@
-# Placeholder.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: civicpulse
+  namespace: civicpulse
+spec:
+  # traefik, not nginx. This cluster (k3s) installs the traefik IngressClass
+  # and has never had an nginx controller, so declaring `nginx` left the
+  # Ingress permanently unserved: status.loadBalancer stayed empty and the
+  # app was reachable only via `kubectl port-forward`. Check before changing
+  # this again with:  kubectl get ingressclass
+  ingressClassName: traefik
+  rules:
+    - host: civicpulse.local
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: civicpulse-backend
+                port:
+                  number: 8000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: civicpulse-frontend
+                port:
+                  number: 80

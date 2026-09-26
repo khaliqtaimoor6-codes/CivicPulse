@@ -1,0 +1,111 @@
+HPA scaling + load-test evidence — BEFORE and AFTER the connection-pool fix
+===========================================================================
+Captured 2026-09-26. Both runs used the same in-cluster k6 approach (a k6 pod in
+namespace `loadtest`, so no port-forward sits in the measured path) and the same
+`POST /api/complaints` endpoint. Raw captures are in this directory.
+
+
+1. WHAT THE FIX CHANGED
+-----------------------
+`create_engine()` used to run *inside* `get_db()` and inside every `/ready`
+probe, so each request and each readiness probe built a brand-new engine and
+connection pool and opened a fresh TCP + auth connection to Postgres. The pool
+is now a module-level singleton:
+
+    pool_size=3, max_overflow=2, pool_pre_ping=True, pool_recycle=1800
+
+That is a designed ceiling of 5 connections per pod, so at `maxReplicas=10` the
+backend can hold at most 50 of Postgres's 100 connections.
+
+Other variables that changed between the two runs, so the comparison is not
+purely apples-to-apples:
+
+  | variable                | before              | after                |
+  |-------------------------|---------------------|----------------------|
+  | image                   | 69032f6d (pre-fix)  | 93d868f5 (rebuilt)   |
+  | cpu request             | 100m                | 150m                 |
+  | memory request          | 128Mi               | 192Mi                |
+  | cpu / memory limit      | 250m / 256Mi        | 350m / 320Mi         |
+  | HPA target              | 60% of 100m = 60m   | 60% of 150m = 90m    |
+  | k6 VUs                  | 50                  | 150                  |
+  | RATE_LIMIT_PER_MINUTE   | 30                  | 100000 (restored)    |
+
+The higher CPU request also raises the HPA target from 60m to 90m per pod, so
+the 50-VU profile no longer generated enough per-pod CPU to scale out. The load
+was raised to 150 VUs to reach `maxReplicas` again.
+
+RATE_LIMIT_PER_MINUTE was raised to 100000 for the "after" run so that HTTP 429
+rate-limit responses would not be counted in `http_req_failed` and hide real
+database errors. It was restored to 30 afterwards. The "before" run at 30/min
+was itself partly measuring the rate limiter, not the database.
+
+
+2. HEADLINE COMPARISON
+----------------------
+                              BEFORE (buggy image)      AFTER (fixed image)
+  requests                    4,943                    47,551
+  throughput                  16.48 req/s              113.21 req/s   (6.9x)
+  http_req_failed             39.63%                   0.00%          (0 of 47,551)
+  checks passed               —                        100.00%
+  p95 latency                 1.48 s                   2.20 s
+  HPA progression             2 -> 6 -> 9 -> 10        2 -> 6 -> 10
+  peak Postgres connections   97 idle of 100           52 of 100
+  outcome                     all pods 0/1, no         stable at 10
+                              self-recovery, even a    replicas, no
+                              superuser psql refused   cascade
+
+
+3. THE ACTUAL PROOF: CONNECTIONS UNDER LOAD
+--------------------------------------------
+Sampled every 3s for the whole run (113 samples) — see
+`pg-connections-under-load.txt` for the raw series.
+
+  min 7 · p50 46 · avg 39.7 · max 52   against max_connections = 100
+
+The peak of 52 is 52% of the limit and matches the designed ceiling of
+5 connections/pod x 10 pods = 50 almost exactly. The pool is now the thing
+limiting connections, which is the entire point of the fix.
+
+Backend ready-replica distribution across those samples:
+
+  10 ready ......... 99 samples
+   6 ready .........  7 samples
+   2 ready .........  7 samples
+   0 ready .........  0 samples   <-- the cascade, absent
+
+For contrast, in the pre-fix run 10 *idle* replicas held 97 of 100 connections
+(`pg-connections-idle.txt`), and around 7 replicas the readiness probes
+themselves consumed the last free connections, so every pod went 0/1 and the
+cluster could not recover even with a superuser `psql` connection
+(`pg-connection-ceiling.txt`).
+
+Note that p95 latency rose (1.48 s -> 2.20 s) because throughput rose 6.9x.
+k6 exited 99 solely because the `p(95) < 2000ms` threshold was crossed; the
+`http_req_failed < 5%` threshold passed at 0.00%.
+
+
+4. HPA PROGRESSION DETAIL (raw: hpa-scaling.log)
+-------------------------------------------------
+  cpu util %   cpu average   replicas   desired
+          2          3m           2         2     idle before load
+        186        279m           6         6     scaling out
+        207        311m          10        10     at maxReplicas, held there
+
+Scale-up completed within roughly 90s and held at 10 for the rest of the run.
+`scaleUp.stabilizationWindowSeconds: 0` remains aggressive, and an earlier
+capture also showed it reacting to a Python-import CPU spike at startup with no
+load at all. That is a configuration observation independent of the pool bug,
+but it was measured against the pre-change resource requests and has not been
+re-captured here.
+
+
+5. RELATED EVIDENCE
+-------------------
+  k6-clean-run.txt               full k6 summary for the post-fix run
+  k6-summary.json                same data, structured, with provenance note
+  hpa-scaling.log                raw `kubectl get hpa -w` for the post-fix run
+  pg-connections-under-load.txt  per-sample connection counts + ready replicas
+  pg-connections-idle.txt        PRE-FIX: 97/100 connections from 10 idle pods
+  pg-connection-ceiling.txt      PRE-FIX: total outage, no self-recovery
+  vpa-recommendations.txt        VPA reading that drove the new request sizes
+  network-isolation.txt          frontend/postgres isolation gap (still open)

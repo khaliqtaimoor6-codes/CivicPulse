@@ -1,0 +1,36 @@
+PRE-FIX EVIDENCE (captured against the buggy image, config digest 69032f6d)
+==============================================================================
+This file is kept deliberately as the "before" record of the connection-pool
+bug. It documents behaviour that is NO LONGER REPRODUCIBLE — the fix is in
+cf6f812 and verified in the rebuilt image (config digest 93d868f5).
+For current behaviour see pg-connections-under-load.txt and hpa-scaling.txt.
+
+PostgreSQL connection consumption at IDLE (no load, 10 replicas)
+captured: 2026-09-26T15:20:04+05:00
+
+total connections: 97
+max_connections  : 100
+backend replicas : 10 (HPA at maxReplicas, CPU 22% -- i.e. essentially idle)
+
+--- connections grouped by client address ---
+10.42.1.19|17
+10.42.2.16|13
+10.42.2.13|13
+10.42.1.17|10
+10.42.0.22|7
+10.42.0.19|7
+10.42.0.23|6
+10.42.1.18|6
+10.42.2.14|6
+10.42.2.15|6
+|1
+
+--- connections grouped by state ---
+idle|91
+active|1
+
+CONCLUSION: 10 idle backend replicas consume ~97 of 100 connections.
+SQLAlchemy keeps pool_size=5 idle connections per process, plus health.py
+builds a fresh engine per /ready probe. The HPA's maxReplicas=10 is therefore
+~150 potential connections against a 100-connection database: the autoscaling
+ceiling and the database ceiling cross well before maxReplicas is reached.

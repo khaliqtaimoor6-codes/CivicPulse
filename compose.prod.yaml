@@ -1,1 +1,123 @@
-# Placeholder.
+name: civicpulse-prod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+
+  backend:
+    image: ghcr.io/khaliqtaimoor6-codes/civicpulse-backend:${IMAGE_TAG}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      TRIAGE_PROVIDER: ${TRIAGE_PROVIDER:-simulated}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-30}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://civicpulse.local}
+    networks:
+      - edge
+      - internal
+    deploy:
+      resources:
+        limits:
+          # Units: this file is decimal throughout (Compose's validator rejects
+          # the binary `Mi` suffix outright -- "invalid suffix: 'mi'"), so every
+          # limit below is a power-of-1000 M. k8s manifests use binary Mi.
+          # Nominal values are kept equal to the k8s figure, which makes each
+          # compose limit ~4.9% tighter than its k8s counterpart:
+          #   postgres 512M  <->  512Mi      redis 256M    <->  256Mi
+          #   backend  320M  <->  320Mi      frontend 128M  <->  128Mi
+          # k8s is authoritative; these are a lower bound, not a second source.
+          #
+          # CPU 400m: the live VPA recommender reports 379m CPU / 250Mi memory
+          # against this workload, so CPU carries headroom over that. Memory
+          # stays at the tuned 320Mi -- CPU was the tight dimension, not memory.
+          # See k8s/overlays/dev/kustomization.yaml and the VPA (updateMode: "Off").
+          cpus: "0.40"
+          memory: 320M
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  frontend:
+    image: ghcr.io/khaliqtaimoor6-codes/civicpulse-frontend:${IMAGE_TAG}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      BACKEND_HOST: backend:8000
+    networks:
+      - edge
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider --quiet http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+networks:
+  edge:
+    driver: bridge
+  internal:
+    driver: bridge
+    internal: true
+
+volumes:
+  pgdata:
+  redisdata:

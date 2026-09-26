@@ -1,1 +1,34 @@
-# Placeholder.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: civicpulse
+resources:
+  - ../../base
+images:
+  - name: ghcr.io/khaliqtaimoor6-codes/civicpulse-backend
+    newName: ghcr.io/khaliqtaimoor6-codes/civicpulse-backend
+    newTag: sha-PLACEHOLDER
+  - name: ghcr.io/khaliqtaimoor6-codes/civicpulse-frontend
+    newName: ghcr.io/khaliqtaimoor6-codes/civicpulse-frontend
+    newTag: sha-PLACEHOLDER
+# GHCR packages are private by default, so pods need pull credentials. CD
+# creates the `ghcr` docker-registry secret before applying this overlay, using
+# GITHUB_TOKEN. Without it the rollouts fail with ImagePullBackOff rather than
+# reaching the smoke test. Scoped to prod only: the dev overlay runs
+# locally-imported images and needs no registry credentials.
+patches:
+  - target:
+      kind: Deployment
+      name: civicpulse-backend
+    patch: |-
+      - op: add
+        path: /spec/template/spec/imagePullSecrets
+        value:
+          - name: ghcr
+  - target:
+      kind: Deployment
+      name: civicpulse-frontend
+    patch: |-
+      - op: add
+        path: /spec/template/spec/imagePullSecrets
+        value:
+          - name: ghcr

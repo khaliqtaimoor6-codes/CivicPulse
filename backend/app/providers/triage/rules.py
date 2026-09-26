@@ -1,4 +1,4 @@
-from .base import Category, Priority, TriageProvider, TriageResult
+from .base import Category, Priority, TriageResult
 
 
 class RuleBasedTriage:
@@ -34,7 +34,21 @@ class RuleBasedTriage:
 	def _priority_for(lowered_text: str) -> Priority:
 		if any(
 			keyword in lowered_text
-			for keyword in ("flooding", "fire", "exposed wire", "burst")
+			for keyword in (
+				"flooding",
+				"fire",
+				"exposed wire",
+				"burst",
+				"gas leak",
+				"life-threatening",
+				"life threatening",
+				"killed",
+				"fatal",
+				"death",
+				"dead",
+				"injured",
+				"injury",
+			)
 		):
 			return Priority.high
 		if any(keyword in lowered_text for keyword in ("minor", "cosmetic")):

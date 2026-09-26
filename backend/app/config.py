@@ -9,6 +9,8 @@ class Settings(BaseSettings):
 	triage_provider: str = "simulated"
 	rate_limit_per_minute: int = 30
 	llm_api_key: str | None = None
+	ollama_base_url: str = "http://ollama:11434"
+	ollama_model: str = "llama3.2:1b"
 	cors_origin: str = "http://localhost:5173"
 
 	model_config = SettingsConfigDict(

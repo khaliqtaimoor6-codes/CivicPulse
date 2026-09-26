@@ -8,11 +8,18 @@ import "./App.css";
 function App() {
   return (
     <BrowserRouter>
-      <nav aria-label="Main navigation">
-        <NavLink to="/">Submit</NavLink>
-        <NavLink to="/dashboard">Dashboard</NavLink>
-        <NavLink to="/stats">Stats</NavLink>
-      </nav>
+      <header className="site-header">
+        <NavLink className="brand" to="/" aria-label="CivicPulse home">
+          <span className="brand-mark" aria-hidden="true"><span /></span>
+          <span>Civic<span>Pulse</span></span>
+        </NavLink>
+        <nav className="site-nav" aria-label="Main navigation">
+          <NavLink to="/">Report an issue</NavLink>
+          <NavLink to="/dashboard">Track reports</NavLink>
+          <NavLink to="/stats">City signals</NavLink>
+        </nav>
+        <span className="service-status"><i /> Service online</span>
+      </header>
       <Routes>
         <Route path="/" element={<SubmitPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />

@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: civicpulse-frontend
+  namespace: civicpulse
+  labels:
+    app: civicpulse-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: civicpulse-frontend
+  template:
+    metadata:
+      labels:
+        app: civicpulse-frontend
+    spec:
+      containers:
+        - name: frontend
+          # CD replaces this placeholder with an immutable image reference later.
+          image: ghcr.io/khaliqtaimoor6-codes/civicpulse-frontend:placeholder
+          ports:
+            - name: http
+              containerPort: 80
+          env:
+            - name: BACKEND_HOST
+              value: civicpulse-backend.civicpulse.svc.cluster.local:8000
+          # Add resources and readiness/liveness probes in the later hardening stage.

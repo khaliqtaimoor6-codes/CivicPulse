@@ -1,0 +1,272 @@
+# Network segmentation for the civicpulse namespace.
+#
+# Mirrors the Docker Compose topology that already works in
+# compose.yaml/compose.prod.yaml: the `internal: true` bridge carries
+# backend->postgres/redis, while `frontend` sits on the `edge` network only
+# and can therefore never open a socket to the database or cache. Compose
+# enforces that with network membership; Kubernetes has no equivalent, so it
+# has to be expressed as policy or it simply does not exist.
+#
+# This closes the gap recorded in docs/evidence/network-isolation.txt.
+#
+# Design is additive-only: one default-deny, then a small explicit allow per
+# real traffic path. Every rule below corresponds to traffic that was already
+# observed working, so nothing here is speculative.
+#
+# Cluster facts this was written against (k3d/k3s, k3s v1.35.5):
+#   pod labels      app=civicpulse-backend | civicpulse-frontend | postgres | redis
+#   service ports   backend 8000, frontend 80, postgres 5432, redis 6379
+#   ingress         IngressClass actually installed is `traefik`
+#   DNS             coredns, kube-dns svc, app=k8s-app=kube-dns in kube-system
+#   metrics-server  installed; drives the backend HPA's cpu metric
+---
+# 1. Default deny. podSelector {} selects every pod in the namespace and an
+#    empty rules list denies all ingress and all egress. Every later policy
+#    only ever widens this, so removing one degrades to "more isolated",
+#    never to "open".
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: civicpulse
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# 2. DNS, for every pod. This is the rule whose absence is silent: a pod that
+#    cannot resolve `postgres` or `civicpulse-backend` fails its dependency
+#    with a name-resolution error rather than a connection error, which reads
+#    like a missing Service instead of a missing policy. Scoped to the
+#    kube-dns pods specifically rather than all of kube-system, so it does not
+#    become a general egress hole into the control plane.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: civicpulse
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # Two destinations are needed, not one, and the reason is non-obvious.
+    #
+    # Pods do not query the CoreDNS pod. /etc/resolv.conf points at the
+    # kube-dns *Service* ClusterIP (10.43.0.10 on this cluster), so the packet
+    # leaves the pod addressed to a Service IP. This cluster's CNI evaluates
+    # egress policy before DNAT, so a podSelector alone matches nothing and
+    # every name lookup fails with NXDOMAIN -- verified empirically: with only
+    # the podSelector rule, `nslookup postgres` returned NXDOMAIN while a query
+    # sent straight to the CoreDNS pod IP (10.42.1.37) got through fine.
+    #
+    # The podSelector is kept as well, so the rule still holds on a CNI that
+    # evaluates post-DNAT, and so direct-to-pod DNS keeps working.
+    #
+    # Re-derive the ClusterIP if the service CIDR changes:
+    #   kubectl get svc kube-dns -n kube-system -o jsonpath='{.spec.clusterIP}'
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+        - ipBlock:
+            cidr: 10.43.0.10/32
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# 3. Ingress controller -> frontend and backend.
+#
+#    The Ingress manifest declares `ingressClassName: nginx`, but no nginx
+#    controller is installed in this cluster -- the only IngressClass present
+#    is `traefik.io/ingress-controller`. The Ingress is therefore currently
+#    unserved (status.loadBalancer is empty).
+#
+#    This rule targets traefik because that is the controller that actually
+#    exists, so the allow-list is correct the moment the class mismatch is
+#    fixed in either direction. Until then it is inert. See the report: this
+#    is a pre-existing bug, not something this policy introduces.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-controller
+  namespace: civicpulse
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - civicpulse-frontend
+          - civicpulse-backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 8000
+---
+# 4/5. frontend -> backend:8000, expressed on both sides.
+#
+#    frontend/nginx.conf proxies `location /api/` to $BACKEND_HOST, so this
+#    path is load-bearing, not theoretical. The ingress also routes /api
+#    straight to the backend.
+#
+#    No other frontend -> anything rule exists, which is the actual fix: with
+#    default-deny in place the frontend cannot open a socket to postgres or
+#    redis, because no policy grants it. The compose `edge`-only membership
+#    is reproduced by omission.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-to-backend
+  namespace: civicpulse
+spec:
+  podSelector:
+    matchLabels:
+      app: civicpulse-backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: civicpulse-frontend
+      ports:
+        - protocol: TCP
+          port: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-egress-to-backend
+  namespace: civicpulse
+spec:
+  podSelector:
+    matchLabels:
+      app: civicpulse-frontend
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: civicpulse-backend
+      ports:
+        - protocol: TCP
+          port: 8000
+---
+# 6/7. backend -> postgres:5432 and redis:6379, both directions.
+#
+#    The counterpart to the frontend rules: the datastores accept traffic from
+#    the backend only, so nothing else in the namespace can reach them even if
+#    a future pod is added without a policy of its own.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backend-to-datastores
+  namespace: civicpulse
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - postgres
+          - redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: civicpulse-backend
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 6379
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backend-egress-to-datastores
+  namespace: civicpulse
+spec:
+  podSelector:
+    matchLabels:
+      app: civicpulse-backend
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - postgres
+                  - redis
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 6379
+---
+# 8. backend -> internet, for the LLM provider call.
+#
+#    This is the trade-off the assignment calls out: under compose the backend
+#    sits on the `internal: true` network and provably cannot reach the
+#    internet, so a real LLM call is impossible there. Kubernetes has no
+#    "internal" flag, so the equivalent capability has to be granted back
+#    explicitly -- which is the whole point of the exercise.
+#
+#    Deviation from "no destination restriction", flagged deliberately: the
+#    CIDR is 0.0.0.0/0 with RFC1918 ranges excluded. A literal 0.0.0.0/0
+#    would also re-open backend -> frontend and backend -> any pod added
+#    later, quietly undoing the pod-to-pod isolation above. The exclusions
+#    cover the cluster's own pod and service ranges (10.42.0.0/16 and
+#    10.43.0.0/16, both inside 10.0.0.0/8), so every internet destination is
+#    still reachable and no in-cluster destination is.
+#
+#    Only 80/443. If the provider is ever reached over another port this
+#    breaks loudly rather than opening the namespace up.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backend-egress-internet
+  namespace: civicpulse
+spec:
+  podSelector:
+    matchLabels:
+      app: civicpulse-backend
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80

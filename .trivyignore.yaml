@@ -1,0 +1,52 @@
+# Trivy ignore file for known, accepted findings.
+#
+# Scope: only vulnerabilities that cannot be fixed without a dependency change
+# explicitly deferred by the owner. Anything fixable in a Dockerfile is
+# remediated there instead of being suppressed here -- the 38 Debian OS CVEs
+# and the frontend libexpat CVE were both fixed at the image level, not
+# suppressed.
+#
+# Every entry carries a statement and an `expired_at` date so nothing becomes
+# a permanent silent exception. Trivy stops honouring an entry once the date
+# passes, so a stale suppression fails the build again rather than lingering.
+#
+# Entries are matched by vulnerability ID only, deliberately. Adding a `paths:`
+# filter appears to require an exact path match in this Trivy version -- a glob
+# like `starlette-*` does not match `.../starlette-0.46.2.dist-info/METADATA`,
+# and when a path filter is present but does not match, the whole entry is
+# skipped and the finding is still reported. Pinning the full path would work
+# but would break the moment the starlette version changed, so ID-only is used
+# instead. All three IDs below are starlette-specific.
+vulnerabilities:
+  # starlette is pinned to <0.47.0 by `fastapi~=0.115.0` in
+  # backend/pyproject.toml. The fixed releases are 0.49.1, 1.1.0 and 1.3.1 --
+  # two of the three require starlette 1.x, so clearing them means a FastAPI
+  # major-version bump that reaches the request path where the
+  # connection-pool fix lives. Deliberately deferred by the owner during the
+  # image-remediation pass; revisit when that bump is scheduled.
+  - id: CVE-2025-62727
+    statement: >-
+      Starlette DoS via Range header merging (fixed in 0.49.1). Accepted:
+      fixing requires a FastAPI bump deferred by the owner. This service does
+      not serve Range-based partial responses, so the vulnerable path is not
+      exercised. Owner: Taimoor.
+    expired_at: 2026-10-03
+
+  - id: CVE-2026-48818
+    statement: >-
+      Starlette SSRF and NTLM credential theft via UNC paths in StaticFiles
+      (fixed in 1.1.0). Accepted: fixing requires a FastAPI bump deferred by
+      the owner. The backend mounts no StaticFiles and serves no UNC paths, so
+      this is not reachable in this application. Owner: Taimoor.
+    expired_at: 2026-10-03
+
+  - id: CVE-2026-54283
+    statement: >-
+      Starlette request.form() limits silently ignored for
+      application/x-www-form-urlencoded, enabling DoS (fixed in 1.3.1).
+      Accepted: fixing requires a FastAPI bump deferred by the owner. THIS IS
+      THE ONE TO WATCH: the service does accept form-encoded bodies on
+      POST /api/complaints, so unlike the other two this is not merely
+      theoretical. Tracked as the primary reason to schedule the FastAPI bump
+      rather than let this suppression roll over. Owner: Taimoor.
+    expired_at: 2026-10-03
