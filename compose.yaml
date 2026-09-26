@@ -30,6 +30,22 @@ services:
       timeout: 5s
       retries: 12
 
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - internal
+    healthcheck:
+      # `ollama list` talks to the server on 11434, so it is a real readiness
+      # check rather than just a process-exists check.
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
   backend:
     build: ./backend
     restart: unless-stopped
@@ -41,7 +57,9 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://civicpulse:civicpulse_dev_password@postgres:5432/civicpulse
       REDIS_URL: redis://redis:6379/0
-      TRIAGE_PROVIDER: simulated
+      TRIAGE_PROVIDER: ${TRIAGE_PROVIDER:-simulated}
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:1b}
       RATE_LIMIT_PER_MINUTE: 30
       CORS_ORIGIN: http://localhost:5173
     ports:
@@ -76,6 +94,7 @@ services:
 volumes:
   pgdata:
   redisdata:
+  ollama_models:
 
 networks:
   edge:
