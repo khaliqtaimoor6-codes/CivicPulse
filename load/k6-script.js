@@ -1,7 +1,7 @@
 import http from "k6/http";
 import { check } from "k6";
 
-const baseUrl = (__ENV.BASE_URL || "http://civicpulse.local").replace(/\/$/, "");
+const baseUrl = (__ENV.BASE_URL || "http://localhost:8000").replace(/\/$/, "");
 
 export const options = {
 	stages: [
