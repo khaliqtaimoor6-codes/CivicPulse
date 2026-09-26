@@ -4,7 +4,6 @@ namespace: civicpulse
 resources:
   - namespace.yaml
   - configmap.yaml
-  - secret.yaml
   - backend-deployment.yaml
   - frontend-deployment.yaml
   - backend-service.yaml

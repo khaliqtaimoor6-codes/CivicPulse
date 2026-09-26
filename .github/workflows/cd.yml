@@ -127,7 +127,7 @@ jobs:
         run: |
           kustomize edit set image ghcr.io/${{ github.repository_owner }}/civicpulse-backend@${BACKEND_DIGEST}
           kustomize edit set image ghcr.io/${{ github.repository_owner }}/civicpulse-frontend@${FRONTEND_DIGEST}
-      - name: Apply manifests and runtime Secret
+      - name: Apply runtime Secret
         env:
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
@@ -135,7 +135,9 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
         run: |
           test -n "$POSTGRES_PASSWORD"
-          kubectl apply -k k8s/overlays/prod
+          test -n "$POSTGRES_USER"
+          test -n "$POSTGRES_DB"
+          kubectl create namespace civicpulse --dry-run=client -o yaml | kubectl apply -f -
           kubectl create secret generic civicpulse-secrets -n civicpulse \
             --from-literal=POSTGRES_USER="$POSTGRES_USER" \
             --from-literal=POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
@@ -144,7 +146,8 @@ jobs:
             --from-literal=REDIS_URL='redis://redis:6379/0' \
             --from-literal=LLM_API_KEY="$LLM_API_KEY" \
             --dry-run=client -o yaml | kubectl apply -f -
-          kubectl rollout restart statefulset/postgres deployment/civicpulse-backend deployment/civicpulse-frontend deployment/redis -n civicpulse
+      - name: Apply manifests
+        run: kubectl apply -k k8s/overlays/prod
       - name: Wait for rollouts
         run: |
           kubectl rollout status statefulset/postgres -n civicpulse --timeout=180s
