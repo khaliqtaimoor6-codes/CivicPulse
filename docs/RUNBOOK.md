@@ -113,3 +113,11 @@ test -n "$(kubectl get secret civicpulse-secrets -n civicpulse -o jsonpath='{.da
 The service uses `RuleBasedTriage` as the fallback. A provider failure should
 therefore produce `triaged_by = "rules:fallback"` and a warning log while
 complaint submission continues to return a result instead of a 500 response.
+
+### Connection pool ceiling
+
+`pool_size=3` in `backend/app/db/session.py` is a **per-process** cap, and it is
+only safe today because `backend/Dockerfile` runs uvicorn with a single worker.
+If uvicorn is ever run with `--workers > 1`, the `pool_size=3` per-process cap
+must be reduced proportionally, or the same `max_connections` ceiling that caused
+the HPA cascade failure will reoccur at fewer replicas.
