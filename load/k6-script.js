@@ -3,10 +3,16 @@ import { check } from "k6";
 
 const baseUrl = (__ENV.BASE_URL || "http://localhost:8000").replace(/\/$/, "");
 
+// The backend CPU request is 150m and the HPA targets 60% of it (90m/pod), so the
+// original 50-VU profile no longer produces enough per-pod CPU to scale out.
+// Default raised to 150 VUs; override with VUS=<n> for a lighter profile.
+const vus = Number(__ENV.VUS || 150);
+const hold = __ENV.HOLD || "4m";
+
 export const options = {
 	stages: [
-		{ duration: "2m", target: 50 },
-		{ duration: "3m", target: 50 },
+		{ duration: "2m", target: vus },
+		{ duration: hold, target: vus },
 		{ duration: "1m", target: 0 },
 	],
 	thresholds: {
