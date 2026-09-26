@@ -15,3 +15,4 @@ resources:
   - ingress.yaml
   - backend-hpa.yaml
   - backend-pdb.yaml
+  - backend-vpa.yaml

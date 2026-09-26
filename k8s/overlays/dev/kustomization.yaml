@@ -24,11 +24,11 @@ patches:
         path: /spec/template/spec/containers/0/resources
         value:
           requests:
-            cpu: 100m
-            memory: 128Mi
+            cpu: 150m
+            memory: 192Mi
           limits:
-            cpu: 250m
-            memory: 256Mi
+            cpu: 350m
+            memory: 320Mi
   - target:
       group: apps
       version: v1
