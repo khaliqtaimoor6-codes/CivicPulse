@@ -121,3 +121,7 @@ only safe today because `backend/Dockerfile` runs uvicorn with a single worker.
 If uvicorn is ever run with `--workers > 1`, the `pool_size=3` per-process cap
 must be reduced proportionally, or the same `max_connections` ceiling that caused
 the HPA cascade failure will reoccur at fewer replicas.
+
+## Known issues
+
+- **FastAPI must be bumped past 0.115.x before 2026-10-03** to clear the suppressed starlette CVEs, notably CVE-2026-54283 (DoS on an exposed endpoint). See `.trivyignore.yaml` for full justification.
