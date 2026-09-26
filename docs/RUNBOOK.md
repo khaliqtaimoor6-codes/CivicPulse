@@ -125,3 +125,5 @@ the HPA cascade failure will reoccur at fewer replicas.
 ## Known issues
 
 - **FastAPI must be bumped past 0.115.x before 2026-10-03** to clear the suppressed starlette CVEs, notably CVE-2026-54283 (DoS on an exposed endpoint). See `.trivyignore.yaml` for full justification.
+
+<!-- throwaway marker: validating that PRs into dev trigger CI, incl. test-frontend. Branch is deleted after the check. -->
