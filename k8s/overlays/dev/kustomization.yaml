@@ -27,7 +27,14 @@ patches:
             cpu: 150m
             memory: 192Mi
           limits:
-            cpu: 350m
+            # CPU limit raised 350m -> 400m. The live VPA recommender now
+            # reports 379m CPU / 250Mi memory against this Deployment, so the
+            # previous 350m sat *below* observed usage and risked throttling.
+            # 400m keeps headroom over the recommendation. Memory stays 320Mi:
+            # the VPA's 250Mi is a recommendation, and CPU was the tight
+            # dimension, not memory. Re-check with `kubectl get vpa` before
+            # the next tuning pass rather than assuming these stay valid.
+            cpu: 400m
             memory: 320Mi
   - target:
       group: apps
