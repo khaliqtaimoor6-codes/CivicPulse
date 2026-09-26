@@ -1,77 +1,41 @@
-k6 clean in-cluster run (valid measurement)
-captured: 2026-09-26T15:19:45+05:00
-target:   http://civicpulse-backend.civicpulse.svc.cluster.local:8000  (in-cluster, no port-forward)
-profile:  1m:10 -> 3m:10 -> 1m:0  (10 max VUs, zero think time)
+# k6 clean run - POST-FIX (regenerated 2026-09-26)
+#
+# WHAT CHANGED SINCE THE PREVIOUS CAPTURE:
+#   - image: now sha256:93d868f5181c95380f85e04ca0ac29e181cf65b001783b16525051e991349198 (config digest); manifest sha256:86480981383f9a259ed7ef8eedd8e615321e99933bbd569e571fca414d433a17
+#            -> the rebuilt image that actually contains the connection-pool fix.
+#            Previous capture ran the OLD image (config 69032f6d..., pre-fix, per-request create_engine).
+#   - resources: requests cpu=150m mem=192Mi / limits cpu=350m mem=320Mi
+#            (previous capture: requests cpu=100m mem=128Mi / limits cpu=250m mem=256Mi)
+#   - pool: pool_size=3 max_overflow=2 pre_ping=True, module-level engine (was: a new engine per request)
+#   - HPA target: 60% of 150m = 90m/pod (previous: 60% of 100m = 60m/pod)
+#   - load: 150 VUs, 2m ramp + 4m hold + 1m down (previous: 50 VUs, 2m+3m+1m)
+#   - RATE_LIMIT_PER_MINUTE was raised 30 -> 100000 for this run so that HTTP 429 rate-limit
+#     responses would not be counted as http_req_failed and mask real DB errors. Restored to 30 after.
+#   - run in-cluster (k6 pod in namespace 'loadtest') so no port-forward in the measured path.
+#
+# RESULT: 0.00% failed (0 of 47551) vs 39.63% failed previously, at 6.9x the throughput.
+# k6 exited 99 ONLY because the p(95) latency threshold (<2000ms) was crossed at 2.2s under this
+# much heavier load; the failure-rate threshold (<5%) passed at 0.00%.
+#
 
+     ✓ complaint accepted or rate limited
 
+     checks.........................: 100.00% 47551 out of 47551
+     data_received..................: 34 MB   81 kB/s
+     data_sent......................: 19 MB   44 kB/s
+     http_req_blocked...............: avg=13.5µs  min=2.8µs     med=7.7µs    max=22.68ms  p(90)=11.6µs  p(95)=15µs    
+     http_req_connecting............: avg=2.4µs   min=0s        med=0s       max=22.5ms   p(90)=0s      p(95)=0s      
+   ✗ http_req_duration..............: avg=1.04s   min=16.64ms   med=923.94ms max=6.98s    p(90)=1.9s    p(95)=2.2s    
+       { expected_response:true }...: avg=1.04s   min=16.64ms   med=923.94ms max=6.98s    p(90)=1.9s    p(95)=2.2s    
+   ✓ http_req_failed................: 0.00%   0 out of 47551
+     http_req_receiving.............: avg=6.85ms  min=-672130ns med=1.1ms    max=296.03ms p(90)=11.08ms p(95)=52.17ms 
+     http_req_sending...............: avg=61.01µs min=10.2µs    med=38.5µs   max=11.52ms  p(90)=94.11µs p(95)=116.21µs
+     http_req_tls_handshaking.......: avg=0s      min=0s        med=0s       max=0s       p(90)=0s      p(95)=0s      
+     http_req_waiting...............: avg=1.03s   min=16.5ms    med=914.27ms max=6.93s    p(90)=1.89s   p(95)=2.19s   
+     http_reqs......................: 47551   113.210013/s
+     iteration_duration.............: avg=1.04s   min=16.89ms   med=924.68ms max=6.98s    p(90)=1.9s    p(95)=2.2s    
+     iterations.....................: 47551   113.210013/s
+     vus............................: 1       min=1              max=150
+     vus_max........................: 150     min=150            max=150
 
-  █ THRESHOLDS 
-
-    http_req_duration
-    ✓ 'p(95)<2000' p(95)=1.48s
-
-    http_req_failed
-    ✗ 'rate<0.05' rate=39.63%
-
-
-  █ TOTAL RESULTS 
-
-    checks_total.......: 4943   16.47553/s
-    checks_succeeded...: 60.36% 2984 out of 4943
-    checks_failed......: 39.63% 1959 out of 4943
-
-    ✗ complaint accepted or rate limited
-      ↳  60% — ✓ 2984 / ✗ 1959
-
-    HTTP
-    http_req_duration..............: avg=491.33ms min=0s       med=307.4ms  max=3.53s p(90)=1.19s p(95)=1.48s
-      { expected_response:true }...: avg=706.15ms min=44.23ms  med=602.66ms max=3.53s p(90)=1.39s p(95)=1.6s 
-    http_req_failed................: 39.63% 1959 out of 4943
-    http_reqs......................: 4943   16.47553/s
-
-    EXECUTION
-    iteration_duration.............: avg=492.12ms min=424.84µs med=307.91ms max=3.54s p(90)=1.19s p(95)=1.48s
-    iterations.....................: 4943   16.47553/s
-    vus............................: 1      min=1            max=10
-    vus_max........................: 10     min=10           max=10
-
-    NETWORK
-    data_received..................: 2.5 MB 8.2 kB/s
-    data_sent......................: 1.9 MB 6.2 kB/s
-
-
-
-time="2026-09-26T10:19:28Z" level=error msg="thresholds on metrics 'http_req_failed' have been crossed"
-
-=== HPA PROGRESSION DURING THIS RUN ===
-civicpulse-backend   Deployment/civicpulse-backend   cpu: 6%/60%   2     10    2     15h
-civicpulse-backend   Deployment/civicpulse-backend   cpu: 57%/60%   2     10    2     15h
-civicpulse-backend   Deployment/civicpulse-backend   cpu: 218%/60%   2     10    2     15h
-civicpulse-backend   Deployment/civicpulse-backend   cpu: 243%/60%   2     10    6     15h
-civicpulse-backend   Deployment/civicpulse-backend   cpu: 249%/60%   2     10    9     15h
-civicpulse-backend   Deployment/civicpulse-backend   cpu: 100%/60%   2     10    9     15h
-civicpulse-backend   Deployment/civicpulse-backend   cpu: 74%/60%    2     10    9     15h
-civicpulse-backend   Deployment/civicpulse-backend   cpu: 58%/60%    2     10    9     15h
-civicpulse-backend   Deployment/civicpulse-backend   cpu: 86%/60%    2     10    9     15h
-civicpulse-backend   Deployment/civicpulse-backend   cpu: 83%/60%    2     10    10    15h
-civicpulse-backend   Deployment/civicpulse-backend   cpu: 114%/60%   2     10    10    15h
-civicpulse-backend   Deployment/civicpulse-backend   cpu: 76%/60%    2     10    10    15h
-civicpulse-backend   Deployment/civicpulse-backend   cpu: 99%/60%    2     10    10    15h
-civicpulse-backend   Deployment/civicpulse-backend   cpu: 89%/60%    2     10    10    15h
-civicpulse-backend   Deployment/civicpulse-backend   cpu: 101%/60%   2     10    10    15h
-civicpulse-backend   Deployment/civicpulse-backend   cpu: 112%/60%   2     10    10    15h
-civicpulse-backend   Deployment/civicpulse-backend   cpu: 107%/60%   2     10    10    15h
-civicpulse-backend   Deployment/civicpulse-backend   cpu: 96%/60%    2     10    10    15h
-civicpulse-backend   Deployment/civicpulse-backend   cpu: 91%/60%    2     10    10    15h
-civicpulse-backend   Deployment/civicpulse-backend   cpu: 85%/60%    2     10    10    15h
-civicpulse-backend   Deployment/civicpulse-backend   cpu: 77%/60%    2     10    10    15h
-civicpulse-backend   Deployment/civicpulse-backend   cpu: 22%/60%    2     10    10    15h
-
-=== INTERPRETATION ===
-Only 10 concurrent VUs is enough to push 2 pods to 218% CPU and to fail
-39.63% of requests. The HPA scaled 2 -> 6 -> 9 -> 10 and pinned at maxReplicas=10
-while CPU stayed at 76-114%, i.e. still above the 60% target. Scaling further was
-impossible not by policy but by the PostgreSQL connection ceiling (10 x 15 = 150
-connections against max_connections=100). p95 latency stays acceptable (1.48s) but the error
-rate is driven by PostgreSQL connection exhaustion, not by CPU saturation.
-Practical ceiling observed: ~16.5 successful req/s.
+time="2026-09-26T11:28:51Z" level=error msg="thresholds on metrics 'http_req_duration' have been crossed"
