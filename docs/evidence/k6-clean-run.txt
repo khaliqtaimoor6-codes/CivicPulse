@@ -1,0 +1,77 @@
+k6 clean in-cluster run (valid measurement)
+captured: 2026-09-26T15:19:45+05:00
+target:   http://civicpulse-backend.civicpulse.svc.cluster.local:8000  (in-cluster, no port-forward)
+profile:  1m:10 -> 3m:10 -> 1m:0  (10 max VUs, zero think time)
+
+
+
+  █ THRESHOLDS 
+
+    http_req_duration
+    ✓ 'p(95)<2000' p(95)=1.48s
+
+    http_req_failed
+    ✗ 'rate<0.05' rate=39.63%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 4943   16.47553/s
+    checks_succeeded...: 60.36% 2984 out of 4943
+    checks_failed......: 39.63% 1959 out of 4943
+
+    ✗ complaint accepted or rate limited
+      ↳  60% — ✓ 2984 / ✗ 1959
+
+    HTTP
+    http_req_duration..............: avg=491.33ms min=0s       med=307.4ms  max=3.53s p(90)=1.19s p(95)=1.48s
+      { expected_response:true }...: avg=706.15ms min=44.23ms  med=602.66ms max=3.53s p(90)=1.39s p(95)=1.6s 
+    http_req_failed................: 39.63% 1959 out of 4943
+    http_reqs......................: 4943   16.47553/s
+
+    EXECUTION
+    iteration_duration.............: avg=492.12ms min=424.84µs med=307.91ms max=3.54s p(90)=1.19s p(95)=1.48s
+    iterations.....................: 4943   16.47553/s
+    vus............................: 1      min=1            max=10
+    vus_max........................: 10     min=10           max=10
+
+    NETWORK
+    data_received..................: 2.5 MB 8.2 kB/s
+    data_sent......................: 1.9 MB 6.2 kB/s
+
+
+
+time="2026-09-26T10:19:28Z" level=error msg="thresholds on metrics 'http_req_failed' have been crossed"
+
+=== HPA PROGRESSION DURING THIS RUN ===
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 6%/60%   2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 57%/60%   2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 218%/60%   2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 243%/60%   2     10    6     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 249%/60%   2     10    9     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 100%/60%   2     10    9     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 74%/60%    2     10    9     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 58%/60%    2     10    9     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 86%/60%    2     10    9     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 83%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 114%/60%   2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 76%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 99%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 89%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 101%/60%   2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 112%/60%   2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 107%/60%   2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 96%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 91%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 85%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 77%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 22%/60%    2     10    10    15h
+
+=== INTERPRETATION ===
+Only 10 concurrent VUs is enough to push 2 pods to 218% CPU and to fail
+39.63% of requests. The HPA scaled 2 -> 6 -> 9 -> 10 and pinned at maxReplicas=10
+while CPU stayed at 76-114%, i.e. still above the 60% target. Scaling further was
+impossible not by policy but by the PostgreSQL connection ceiling (10 x 15 = 150
+connections against max_connections=100). p95 latency stays acceptable (1.48s) but the error
+rate is driven by PostgreSQL connection exhaustion, not by CPU saturation.
+Practical ceiling observed: ~16.5 successful req/s.

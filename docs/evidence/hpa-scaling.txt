@@ -1,0 +1,124 @@
+HPA scaling evidence for civicpulse-backend
+captured: 2026-09-26T15:31:58+05:00
+
+==============================================================
+RUN 1 -- host k6 via port-forward, 50 max VUs (load/clean-up.log)
+==============================================================
+The HPA scaled on real application load:
+    5 -> 4 -> 2   (settling to floor after the pre-test restart)
+    2 replicas @ 128%/60%   load starts
+    2 -> 5          reason: cpu resource utilization above target
+    5 -> 7          reason: cpu resource utilization above target
+  raw watch: docs/evidence/hpa-scaling.log
+
+==============================================================
+RUN 2 -- in-cluster k6, 10 max VUs (clean measurement)
+==============================================================
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 6%/60%   2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 57%/60%   2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 218%/60%   2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 243%/60%   2     10    6     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 249%/60%   2     10    9     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 100%/60%   2     10    9     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 74%/60%    2     10    9     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 58%/60%    2     10    9     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 86%/60%    2     10    9     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 83%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 114%/60%   2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 76%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 99%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 89%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 101%/60%   2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 112%/60%   2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 107%/60%   2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 96%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 91%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 85%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 77%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 22%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 6%/60%     2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 6%/60%     2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 7%/60%     2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 8%/60%     2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 5%/60%     2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 8%/60%     2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 7%/60%     2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 5%/60%     2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 8%/60%     2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 5%/60%     2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 6%/60%     2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 5%/60%     2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 7%/60%     2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 6%/60%     2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 6%/60%     2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 5%/60%     2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 31%/60%    2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 228%/60%   2     10    2     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 244%/60%   2     10    6     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 239%/60%   2     10    9     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 119%/60%   2     10    9     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 98%/60%    2     10    9     15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 86%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 80%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 78%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 87%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 91%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 116%/60%   2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 114%/60%   2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 111%/60%   2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 103%/60%   2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 89%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 94%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 77%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 66%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 96%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 109%/60%   2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 93%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 64%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 60%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 31%/60%    2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 6%/60%     2     10    10    15h
+civicpulse-backend   Deployment/civicpulse-backend   cpu: 5%/60%     2     10    10    15h
+
+==============================================================
+RUN 0 -- no load at all: pod-startup CPU transient
+==============================================================
+Before any load, restarting pods produced a startup CPU spike:
+    t=10s  pod cpu: 115m 62m 6m 9m 11m
+    t=20s  pod cpu: 115m 62m 6m 9m 11m
+    t=30s  pod cpu: 6m 6m 6m 8m 8m     <- transient over
+  HPA read 71%/60% and scaled 2 -> 5 with no load present.
+  Cause: k8s/base/backend-hpa.yaml sets
+      scaleUp.stabilizationWindowSeconds: 0
+      scaleDown.stabilizationWindowSeconds: 300
+  Instant scale-up means Python/FastAPI import-time CPU is treated as load.
+  raw watch: docs/evidence/hpa-startup-spike.log
+  raw cpu : docs/evidence/cpu-startup-spike.log
+
+==============================================================
+HPA manifest under test
+==============================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: civicpulse-backend
+  namespace: civicpulse
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: civicpulse-backend
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      stabilizationWindowSeconds: 0

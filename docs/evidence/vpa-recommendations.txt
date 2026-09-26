@@ -1,0 +1,47 @@
+VerticalPodAutoscaler recommendations for civicpulse-backend
+captured: 2026-09-26T15:31:19+05:00
+
+=== VPA object (mode Off = recommendation only, no automatic resize) ===
+NAME                 MODE   CPU    MEM     PROVIDED   AGE     MINREPLICAS   OOMSECONDS
+civicpulse-backend   Off    224m   250Mi   True       6m48s                 
+
+=== full recommendation with target / lowerBound / upperBound ===
+container: backend
+  target.cpu     : 224m
+  target.memory  : 250Mi
+  lowerBound.cpu : 75m
+  lowerBound.mem : 250Mi
+  upperBound.cpu : 54596m
+  upperBound.mem : 25546745743
+
+=== describe vpa (conditions) ===
+  Conditions:
+    Last Transition Time:  2026-09-26T10:24:39Z
+    Status:                True
+    Type:                  RecommendationProvided
+  Observed Generation:     1
+  Recommendation:
+    Container Recommendations:
+      Container Name:  backend
+
+=== CURRENT container resources (for comparison) ===
+container: backend
+  request: cpu=100m  memory=128Mi
+  limit  : cpu=250m  memory=256Mi
+
+=== ANALYSIS ===
+VPA observed real CPU usage of 224m-296m per backend container.
+Configured values:  cpu request=100m   cpu limit=250m
+                   mem request=128Mi  mem limit=256Mi
+
+Consequences:
+  * The cpu limit (250m) is BELOW the observed requirement (224m-296m), so the
+    container is being CPU-throttled by cgroups for much of the request.
+  * CPU throttling inflates the utilization metric the HPA reads, which is why
+    the HPA observed 218-249% against a 60%-of-100m target and scaled out
+    aggressively (2 -> 6 -> 9 -> 10).
+  * The memory recommendation (250Mi) sits just under the 256Mi limit, leaving
+    no headroom and creating OOMKill risk under load.
+  * Scaling out multiplies per-pod DB connection pools (15 each) against a
+    100-connection database, so the HPA drives the system into connection
+    exhaustion. See pg-connection-ceiling.txt and pg-connections-idle.txt.

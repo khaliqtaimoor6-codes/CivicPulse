@@ -1,0 +1,40 @@
+PostgreSQL connection ceiling under HPA scale-out
+captured: 2026-09-26T15:04:31+05:00
+
+=== CONFIRMED CAPTURE (while 5 replicas, load running) ===
+max_connections=100
+superuser_reserved_connections=3
+live connections by state:
+  idle                 = 62
+  idle in transaction  = 21
+  (none)               = 5
+  active               = 1
+  total                = 89 of 100 usable
+
+=== PROOF OF EXHAUSTION (at 7 replicas) ===
+backend replicas: 7
+even a superuser psql session is now refused:
+  psql: error: connection to server on socket "/var/run/postgresql/.s.PGSQL.5432" failed: FATAL:  sorry, too many clients already
+  command terminated with exit code 2
+
+=== ROOT CAUSE ===
+backend/app/db/session.py:10 -> create_engine(get_settings().database_url, pool_pre_ping=True)
+  no pool_size / max_overflow set, so SQLAlchemy defaults apply:
+  pool_size=5, max_overflow=10, pool_timeout=30  =>  15 connections per process
+
+  replicas x 15  vs  max_connections=100
+    2 pods ->  30 connections   OK
+    5 pods ->  75 connections   + probe connections -> saturation observed
+    7 pods -> 105 connections   > max_connections -> 'too many clients already'
+
+backend/app/routes/health.py:21 additionally builds a NEW engine (and a new pool)
+on every /ready call, creating a connection outside the accounting above.
+
+=== OBSERVED ERROR (backend logs) ===
+  psycopg2.OperationalError: connection to server at "postgres" (10.43.248.222),
+  port 5432 failed: FATAL:  sorry, too many clients already
+
+=== FEEDBACK LOOP ===
+HPA scales on CPU. Each new pod multiplies DB connection demand. Scaling out
+therefore makes the real bottleneck (DB connections) worse, producing 500s.
+CPU-based autoscaling is blind to this ceiling.
