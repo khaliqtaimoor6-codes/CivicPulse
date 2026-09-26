@@ -201,18 +201,27 @@ jobs:
       # Secret before apply, matching the ordering the manifests require: the
       # deployments reference civicpulse-secrets, so applying them first would
       # leave the pods stuck on CreateContainerConfigError.
+      #
+      # The database password is generated per run rather than read from a
+      # repository secret. This cluster is created and destroyed inside one job
+      # and nothing durable is written to it, so there is nothing for a
+      # long-lived secret to protect; requiring one only meant the job failed
+      # whenever the repository happened to have no POSTGRES_* secret
+      # configured. A fresh random value per run is both more secure and
+      # self-contained.
       - name: Apply registry credentials and runtime Secret
         shell: bash
         env:
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
         run: |
           set -euo pipefail
-          test -n "$POSTGRES_PASSWORD"
-          test -n "$POSTGRES_USER"
-          test -n "$POSTGRES_DB"
+          # TRIAGE_PROVIDER is 'simulated' for this job, so no LLM key is needed
+          # and none is required to be configured on the repository.
+          LLM_API_KEY="${LLM_API_KEY:-}"
+          POSTGRES_USER=civicpulse
+          POSTGRES_DB=civicpulse
+          POSTGRES_PASSWORD="$(openssl rand -hex 16)"
+          echo "generated an ephemeral database password for this run"
           kubectl create namespace civicpulse --dry-run=client -o yaml | kubectl apply -f -
           kubectl create secret docker-registry ghcr -n civicpulse \
             --docker-server=ghcr.io \
