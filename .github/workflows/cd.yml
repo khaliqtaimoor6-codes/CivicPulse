@@ -44,13 +44,25 @@ jobs:
       - name: Lint and type-check
         working-directory: backend
         run: |
-          python -m pip install ".[dev]" ruff==0.11.2 mypy==1.15.0
+          # -e, deliberately. app/ has no __init__.py, so it is a namespace
+          # package: a non-editable install puts a *copy* of app in
+          # site-packages, and checks then run against that copy rather than the
+          # checked-out source. See the Backend tests note below.
+          python -m pip install -e ".[dev]" ruff==0.11.2 mypy==1.15.0
           ruff check app tests
           mypy --explicit-package-bases --follow-imports=skip app/providers/triage
       - name: Backend tests
         working-directory: backend
         run: |
-          python -m pip install ".[dev]"
+          # Must match ci.yml: `pip install -e`, not `pip install`. app/ is a
+          # namespace package and backend/tests/ has no __init__.py, so pytest
+          # prepends backend/tests to sys.path rather than backend/. With a
+          # non-editable install `app` resolves to the site-packages copy, and
+          # coverage.py ends up measuring a tree that never executes: all 23
+          # tests passed but coverage reported "No data was collected" and
+          # TOTAL 0.00%, failing --cov-fail-under=65. This is what broke the
+          # first real CD run.
+          python -m pip install -e ".[dev]"
           alembic upgrade head
           pytest --cov=app --cov-fail-under=65
       - uses: actions/setup-node@v4
