@@ -4,5 +4,26 @@ metadata:
   name: civicpulse-config
   namespace: civicpulse
 data:
+  # Triage implementation: llm | ollama | rules | simulated
+  #
+  #   llm       - external Groq API. Requires the LLM_API_KEY Secret.
+  #   ollama    - local Ollama model. No API key and no outbound internet
+  #               required, which makes it the working key-free alternative to
+  #               `llm`. Reported as triaged_by="llm:ollama".
+  #   rules     - deterministic keyword matching, no model.
+  #   simulated - fixed canned responses.
+  #
+  # Left at `simulated` deliberately: selecting `ollama` also requires an
+  # Ollama Deployment + Service on the backend's network in these manifests,
+  # and none exists yet. Selecting it before that lands would make every
+  # triage call fail and silently degrade to `rules:fallback`, which looks
+  # like a passing service in the UI. The model must also be pulled into the
+  # pod before first use.
   TRIAGE_PROVIDER: simulated
+
+  # Only read when TRIAGE_PROVIDER=ollama. Service DNS name once an Ollama
+  # Service exists in this namespace.
+  OLLAMA_BASE_URL: http://ollama:11434
+  OLLAMA_MODEL: llama3.2:1b
+
   RATE_LIMIT_PER_MINUTE: "30"
