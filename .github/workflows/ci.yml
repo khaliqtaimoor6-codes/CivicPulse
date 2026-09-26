@@ -292,3 +292,45 @@ jobs:
             --output /tmp/stats-second.json http://localhost:8000/api/stats
           grep -iq '^x-cache: MISS' /tmp/stats-first.headers
           grep -iq '^x-cache: HIT' /tmp/stats-second.headers
+
+  # The "main protection" ruleset requires a status check named exactly "CI".
+  # GitHub matches required checks against *job* names, not workflow names, so
+  # the seven jobs above report as "Backend tests", "Build images", and so on.
+  # There is no "CI" check, so the required check could never be satisfied and
+  # every PR to main was blocked regardless of approval. This aggregate job
+  # reports a single stable "CI" context for the ruleset to wait on.
+  #
+  # `if: always()` is load-bearing. With a plain `needs:`, a failing dependency
+  # skips this job, and a *skipped* required check is not a reliable pass. Here
+  # the gate always runs and fails explicitly with the offending job named.
+  ci-gate:
+    name: CI
+    if: always()
+    needs:
+      - lint-and-type
+      - test-backend
+      - test-frontend
+      - build
+      - scan
+      - manifests
+      - integration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report and enforce every job result
+        shell: bash
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          failed=()
+          while read -r job result; do
+            printf '  %-9s %s\n' "$result" "$job"
+            if [ "$result" != success ]; then
+              failed+=("$job")
+            fi
+          done < <(jq -r 'to_entries[] | "\(.key) \(.value.result)"' <<<"$NEEDS")
+          if [ "${#failed[@]}" -gt 0 ]; then
+            echo "::error::CI gate failed; these jobs did not succeed: ${failed[*]}"
+            exit 1
+          fi
+          echo "All CI jobs succeeded."
