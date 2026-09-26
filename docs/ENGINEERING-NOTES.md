@@ -65,6 +65,14 @@ the recommendation where quality matters. `llama3.2:3b` could not be measured on
 machine, where loading it exhausted available memory; `OLLAMA_MODEL` is a one-variable swap to
 retry on adequate hardware.
 
+**Fix path, identified but unproven.** A 7B-or-larger model has the headroom for a three-way
+severity judgement that 1B lacks, and needs no code change to try because the schema and prompt are
+model-agnostic. Failing that, a purpose-built classifier -- fine-tuned on labelled complaint/priority
+pairs, or a small supervised model over TF-IDF features -- would likely beat 1B outright, since
+priority is a learned keyword mapping rather than a reasoning task; the existing rule-based provider
+is the un-tuned version of that idea. Neither could be measured on the available hardware, so the
+offline path should currently be described as viable for category triage and not yet for priority.
+
 ### Cluster scope
 
 Ollama is intentionally not deployed to Kubernetes. `TRIAGE_PROVIDER` stays `simulated` in

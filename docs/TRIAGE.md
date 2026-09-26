@@ -65,6 +65,24 @@ This is a capability limit of a 1B model, not a prompt problem. It is the
 concrete cost of the fully-offline path, and it is the reason `llm:groq` remains
 the default recommendation when quality matters.
 
+### Known fix path
+
+The limitation is a resolution problem, so it is fixable in two ways. A larger
+model — 7B or above — has the headroom for a three-way severity judgement that
+1B lacks; `OLLAMA_MODEL` makes that a one-line change with no code edit, since
+the schema and prompt are model-agnostic. Failing that, a purpose-built
+classifier (fine-tuned on labelled complaint/priority pairs, or a small
+supervised model such as logistic regression or a gradient-boosted tree over
+TF-IDF features) would almost certainly beat 1B here, because priority is a
+learned mapping over keywords rather than a reasoning task. The rule-based
+provider is the un-tuned version of that idea and already performs
+deterministically.
+
+Neither was evaluated here: this machine had 7.6 GiB of RAM, and loading
+`llama3.2:3b` exhausted available memory and timed out. So the fix path is
+identified but unproven, and the honest position is that the offline path is
+currently viable for category triage and not yet for priority.
+
 ## Two implementation details that are load-bearing
 
 **Structured output must be schema-constrained.** Ollama's `format: "json"` is
@@ -84,7 +102,7 @@ not reintroduce the reload cost on the next request.
 A larger model was not evaluated: `llama3.2:3b` could not be measured on the
 7.6 GiB test machine, where loading it exhausted memory and the request timed
 out. `OLLAMA_MODEL` is a single-environment-variable swap once adequate
-hardware is available.
+hardware is available. See "Known fix path" above.
 
 ## Demo guidance
 
