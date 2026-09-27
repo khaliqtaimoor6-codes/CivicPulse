@@ -7,7 +7,13 @@ import type {
 	Status,
 } from "./types";
 
-type ErrorBody = { detail?: string } | Record<string, unknown> | string | null;
+type ValidationItem = { msg?: unknown };
+
+type ErrorBody =
+	| { detail?: string | ValidationItem[] }
+	| Record<string, unknown>
+	| string
+	| null;
 
 export class ApiError extends Error {
 	readonly status: number;
@@ -37,23 +43,45 @@ async function parseBody(response: Response): Promise<ErrorBody | unknown> {
 	return response.text();
 }
 
+const GENERIC_FAILURE = "Request failed.";
+
+/**
+ * FastAPI reports validation failures as a list of per-field errors rather than
+ * one string. Collapsing that list to a generic message says nothing at the one
+ * moment the detail would help, so the field messages are joined instead.
+ */
+function joinValidationDetail(detail: ValidationItem[]): string {
+	const messages = detail
+		.map((item) => (item && typeof item.msg === "string" ? item.msg.trim() : ""))
+		.filter((message) => message.length > 0);
+	return messages.join("; ");
+}
+
 function errorMessage(body: ErrorBody): string {
 	if (typeof body === "string") {
-		return body;
+		// A bare status such as 503 from a proxy can arrive with an empty
+		// body, and an empty message renders as a blank notice with no
+		// explanation at all.
+		return body.trim() || GENERIC_FAILURE;
 	}
-	if (body && typeof body === "object" && "detail" in body && typeof body.detail === "string") {
-		return body.detail;
+	if (body && typeof body === "object" && "detail" in body) {
+		const detail = body.detail;
+		if (typeof detail === "string") return detail.trim() || GENERIC_FAILURE;
+		if (Array.isArray(detail)) return joinValidationDetail(detail) || GENERIC_FAILURE;
 	}
-	return "Request failed.";
+	return GENERIC_FAILURE;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<{ data: T; response: Response }> {
 	const response = await fetch(path, {
+		...init,
+		// Spread after init so a caller's headers merge with the default
+		// instead of replacing the object wholesale, which would drop the
+		// content type on any request that passed its own.
 		headers: {
 			"Content-Type": "application/json",
 			...(init?.headers ?? {}),
 		},
-		...init,
 	});
 	const body = await parseBody(response);
 
