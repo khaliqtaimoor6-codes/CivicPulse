@@ -47,6 +47,35 @@ already picks up the current Secret, so the restart was redundant work. The
 trade-off is that the manual step above now exists for the rotation case, which
 CD does not perform. Revisit if automated rotation is ever added.
 
+### Static host (frontend only)
+
+The frontend builds to a static bundle, so it can be uploaded to a static host.
+`frontend/vercel.json` holds the Vercel settings: `npm run build`, output
+directory `dist`, and a catch-all rewrite to `/index.html`. Set the project's
+Root Directory to `frontend`.
+
+The rewrite is load-bearing, not cosmetic. `/dashboard` and `/stats` exist only
+inside the router, so without a fallback a direct load or a shared link returns
+the host's 404 page while the same routes work fine when clicked. Vercel checks
+the filesystem before applying rewrites, so hashed `/assets/*` files, the
+favicon, and the fonts are still served as files rather than being swallowed by
+the fallback.
+
+This does not produce a working CivicPulse on its own. API calls are relative
+(`/api/complaints`) and Nginx is the component that proxies that prefix to the
+backend, per ADR 0002. A static host has no Nginx, so `/api/...` resolves to
+the static host itself and comes back as the app shell, which the client reports
+as an unusable response instead of data. Two ways out:
+
+- Add a serverless function or proxy rewrite for `/api/*` on the host, pointing
+  at a reachable backend. Keeps the frontend static, but adds a hop and a
+  platform-specific piece to a design that is currently origin-agnostic.
+- Serve the built `dist/` from the same origin as the backend and keep the
+  Nginx proxy in front of it, which is what Compose and Kubernetes already do.
+
+Prefer the second for anything real. Treat a static-host deploy as a way to
+review the frontend, not as a deployment of the system.
+
 ## Roll Back
 
 For an active incident, use the fast imperative rollback:
