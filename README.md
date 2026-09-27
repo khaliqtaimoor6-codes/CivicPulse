@@ -1,5 +1,15 @@
 # CivicPulse
 
+[![CI](https://github.com/khaliqtaimoor6-codes/CivicPulse/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/khaliqtaimoor6-codes/CivicPulse/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](backend/pyproject.toml)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)](backend/app/main.py)
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](frontend/package.json)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript&logoColor=white)](frontend/package.json)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](compose.yaml)
+[![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](compose.yaml)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-1.31-326CE5?logo=kubernetes&logoColor=white)](k8s/base/kustomization.yaml)
+
 Municipal complaint intake, AI triage, and operations dashboard.
 
 A citizen submits a complaint in free text. The system validates it, triages it
