@@ -1,5 +1,19 @@
 from .base import Category, Priority, TriageResult
 
+# Ordered most-specific first. Sequence is load-bearing: "flooding" must be
+# tested before "water" or a flooding report lands in the wrong category, and
+# the roads entry only matches "street" once "streetlight" has been ruled out.
+CATEGORY_KEYWORDS: tuple[tuple[Category, tuple[str, ...]], ...] = (
+	(Category.streetlights, ("streetlight", "lamp")),
+	(Category.water, ("flooding", "water", "leak")),
+	(Category.electricity, ("wire", "power", "electric")),
+	(Category.sanitation, ("garbage", "sewage", "drain")),
+	(
+		Category.roads,
+		("pothole", "road", "street"),
+	),
+)
+
 
 class RuleBasedTriage:
 	name = "rules"
@@ -16,18 +30,9 @@ class RuleBasedTriage:
 
 	@staticmethod
 	def _category_for(lowered_text: str) -> Category:
-		if any(keyword in lowered_text for keyword in ("streetlight", "lamp")):
-			return Category.streetlights
-		if any(keyword in lowered_text for keyword in ("water", "leak", "flooding")):
-			return Category.water
-		if any(keyword in lowered_text for keyword in ("wire", "power", "electric")):
-			return Category.electricity
-		if any(keyword in lowered_text for keyword in ("garbage", "sewage", "drain")):
-			return Category.sanitation
-		if any(keyword in lowered_text for keyword in ("pothole", "road")) or (
-			"street" in lowered_text and "streetlight" not in lowered_text
-		):
-			return Category.roads
+		for category, keywords in CATEGORY_KEYWORDS:
+			if any(keyword in lowered_text for keyword in keywords):
+				return category
 		return Category.other
 
 	@staticmethod
