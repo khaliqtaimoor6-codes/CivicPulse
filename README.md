@@ -96,16 +96,27 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Then load the 30 seeded complaints (the seed is idempotent — running it twice
-inserts nothing the second time):
+Apply the migrations, then load the 30 seeded complaints (the seed is
+idempotent — running it twice inserts nothing the second time):
 
 ```bash
+docker compose exec backend alembic upgrade head
 docker compose exec backend python scripts/seed.py
 ```
 
-Open **<http://localhost:80>**. Submit a complaint and watch the provider badge
-on the response; open `/api/stats` twice and watch `X-Cache` go `MISS` then
-`HIT`.
+The migration step is not optional and is not done for you. The backend image
+starts uvicorn and nothing else, so on a fresh volume the `complaints` table
+does not exist until `alembic upgrade head` has run — without it the seed
+fails and every query returns an error. This is deliberate: the brief forbids
+`CREATE TABLE` in application startup code, so the schema can only be created
+by the migration.
+
+Open **<http://localhost:5173>**. The frontend container serves on port 80
+*inside* the container, but `compose.yaml` publishes it on host port 5173, so
+that is the URL to use. (`compose.prod.yaml` is the file that publishes on
+host port 80, via `FRONTEND_PORT`.) Submit a complaint and watch the provider
+badge on the response; open `/api/stats` twice and watch `X-Cache` go `MISS`
+then `HIT`. The API itself is on <http://localhost:8000>.
 
 Triage defaults to `simulated` so this works with no API key and no model
 download. For real local inference:
