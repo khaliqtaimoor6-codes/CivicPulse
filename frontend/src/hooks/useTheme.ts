@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { storeTheme, type Theme } from "../lib/theme";
 
@@ -16,17 +16,20 @@ export default function useTheme(): [Theme, () => void] {
 		return document.documentElement.dataset.theme === "light" ? "light" : "dark";
 	});
 
+	// Only a deliberate toggle is worth remembering. Persisting the initial
+	// value would turn the default into an apparent choice, and the user would
+	// then keep getting it even after changing their OS appearance.
+	const isChosen = useRef(false);
+
 	useEffect(() => {
 		document.documentElement.dataset.theme = theme;
 		document.documentElement.style.colorScheme = theme;
+		if (isChosen.current) storeTheme(theme);
 	}, [theme]);
 
 	const toggle = useCallback(() => {
-		setTheme((current) => {
-			const next: Theme = current === "dark" ? "light" : "dark";
-			storeTheme(next);
-			return next;
-		});
+		isChosen.current = true;
+		setTheme((current) => (current === "dark" ? "light" : "dark"));
 	}, []);
 
 	return [theme, toggle];
