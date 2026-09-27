@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { ArrowUpRight } from "@phosphor-icons/react/dist/ssr/ArrowUpRight";
 import { CheckCircle } from "@phosphor-icons/react/dist/ssr/CheckCircle";
 import { MapPin } from "@phosphor-icons/react/dist/ssr/MapPin";
@@ -130,9 +131,9 @@ export default function SubmitPage() {
 								Start a report
 								<ArrowUpRight size={17} weight="bold" />
 							</a>
-							<a className="btn btn-ghost" href="/dashboard">
+							<Link className="btn btn-ghost" to="/dashboard">
 								Track reports
-							</a>
+							</Link>
 						</div>
 					</div>
 
@@ -371,10 +372,10 @@ export default function SubmitPage() {
 							</div>
 							<div className="receipt__foot">
 								<p>Reference {submittedComplaint.id}</p>
-								<a className="btn btn-ghost" href="/dashboard">
+								<Link className="btn btn-ghost" to="/dashboard">
 									Track this report
 									<ArrowUpRight size={16} weight="bold" />
-								</a>
+								</Link>
 							</div>
 						</div>
 					</div>

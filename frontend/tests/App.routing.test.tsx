@@ -119,4 +119,39 @@ describe("App routing", () => {
 		expect(main().getByRole("heading", { name: "Complaint dashboard" })).toBeInTheDocument();
 		expect(window.location.pathname).toBe("/dashboard");
 	});
+
+	/**
+	 * The header and footer link with react-router, so those routes swap without
+	 * a document load. The landing page's own "Track reports" CTA was a bare
+	 * <a href>, so the two links to the same route behaved differently: the nav
+	 * one kept you in the running app, the hero one re-requested the page and
+	 * could serve a stale cached shell. Nothing caught it because the routing
+	 * test above only exercised the header.
+	 *
+	 * A router Link calls preventDefault on the click; a bare anchor does not,
+	 * and that difference is the whole bug. React's listener is on the root
+	 * container, so by the time the event reaches document the default is
+	 * already resolved.
+	 */
+	it("sends the landing page CTA through the router rather than reloading", async () => {
+		vi.mocked(listComplaints).mockResolvedValue({ items: [], total: 0 });
+		const user = (await import("@testing-library/user-event")).default.setup();
+		renderAt("/");
+
+		await screen.findByLabelText("Complaint");
+		const cta = main().getByRole("link", { name: "Track reports" });
+		expect(cta).toHaveAttribute("href", "/dashboard");
+
+		let defaultPrevented = false;
+		const record = (event: Event) => {
+			defaultPrevented = defaultPrevented || (event as MouseEvent).defaultPrevented;
+		};
+		document.addEventListener("click", record);
+		await user.click(cta);
+		document.removeEventListener("click", record);
+
+		expect(defaultPrevented).toBe(true);
+		expect(main().getByRole("heading", { name: "Complaint dashboard" })).toBeInTheDocument();
+		expect(window.location.pathname).toBe("/dashboard");
+	});
 });
