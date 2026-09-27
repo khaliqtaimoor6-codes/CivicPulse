@@ -1,5 +1,3 @@
-import "@testing-library/jest-dom/vitest";
-import React from "react";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -18,9 +16,16 @@ const mockedMeta = vi.mocked(getProviderMeta);
 
 const aggregates: StatsResponse = {
 	total: 42,
-	by_category: { water: 7, streetlights: 6, other: 8 },
+	by_category: { water: 7, electricity: 5, sanitation: 4, roads: 6, streetlights: 6, other: 14 },
 	by_priority: { high: 2, normal: 31, low: 1 },
 	by_status: { open: 30, in_progress: 4, resolved: 6, rejected: 2 },
+};
+
+const emptyAggregates: StatsResponse = {
+	total: 0,
+	by_category: { water: 0, electricity: 0, sanitation: 0, roads: 0, streetlights: 0, other: 0 },
+	by_priority: { high: 0, normal: 0, low: 0 },
+	by_status: { open: 0, in_progress: 0, resolved: 0, rejected: 0 },
 };
 
 const providerMeta: ProviderMetaResponse = {
@@ -155,19 +160,11 @@ describe("StatsPage", () => {
 		mockOk();
 		render(<StatsPage />);
 
-		expect(await screen.findByText("other, 8 reports")).toBeInTheDocument();
+		expect(await screen.findByText("other, 14 reports")).toBeInTheDocument();
 	});
 
 	it("says so plainly when nothing has been reported yet", async () => {
-		mockedStats.mockResolvedValue({
-			data: {
-				total: 0,
-				by_category: {},
-				by_priority: {},
-				by_status: {},
-			},
-			cacheStatus: "MISS",
-		});
+		mockedStats.mockResolvedValue({ data: emptyAggregates, cacheStatus: "MISS" });
 		mockedMeta.mockResolvedValue(providerMeta);
 		render(<StatsPage />);
 
