@@ -62,7 +62,11 @@ jobs:
 
       - name: TypeScript
         working-directory: frontend
-        run: npx tsc --noEmit
+        # -b is required, not optional: the root tsconfig is solution-style, so
+        # it lists no files of its own and holds the real configuration in
+        # referenced projects. Plain --noEmit typechecks none of them and
+        # passes unconditionally.
+        run: npx tsc -b
 
   test-backend:
     name: Backend tests
@@ -137,14 +141,9 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Run Vitest when configured
+      - name: Run frontend tests
         working-directory: frontend
-        run: |
-          if node -e "process.exit(require('./package.json').scripts?.test ? 0 : 1)"; then
-            npm test -- --run
-          else
-            echo "No Vitest test script is configured yet; skipping until frontend tests land."
-          fi
+        run: npm test
 
   build:
     name: Build images
