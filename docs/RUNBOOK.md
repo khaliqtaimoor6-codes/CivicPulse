@@ -47,12 +47,43 @@ already picks up the current Secret, so the restart was redundant work. The
 trade-off is that the manual step above now exists for the rotation case, which
 CD does not perform. Revisit if automated rotation is ever added.
 
-### Static host (frontend only)
+### Container host (Fly.io)
 
-The frontend builds to a static bundle, so it can be uploaded to a static host.
-`frontend/vercel.json` holds the Vercel settings: `npm run build`, output
-directory `dist`, and a catch-all rewrite to `/index.html`. Set the project's
-Root Directory to `frontend`.
+`deploy/fly/` holds app definitions that deploy the images this repository
+already builds, unmodified, as containers. Choose this over a static host when
+you want the system online, because the backend, Postgres and Redis have to run
+somewhere and a static host runs none of them.
+
+```bash
+fly apps create civicpulse-backend
+fly apps create civicpulse-frontend
+
+fly postgres create --name civicpulse-db --region iad
+fly postgres attach --app civicpulse-backend civicpulse-db
+fly redis create --name civicpulse-cache --region iad
+fly redis attach --app civicpulse-backend --redis-name civicpulse-cache
+
+fly secrets set --app civicpulse-backend CORS_ORIGIN=https://civicpulse-frontend.fly.dev
+
+fly deploy backend  --config ../deploy/fly/backend.toml
+fly deploy frontend --config ../deploy/fly/frontend.toml
+```
+
+The working directory argument is the build context, and `--config` is resolved
+relative to it, hence the `../deploy/...` paths from the repository root. See
+`deploy/fly/README.md` for the reasoning and for what the setup does not cover.
+
+`backend.toml` sets `release_command = "alembic upgrade head"` so the schema is
+applied once per deploy before new instances take traffic, which is the job
+`k8s/base/migration-job.yaml` does on Kubernetes. Deploy the backend before the
+frontend so the API contract stays stable for a bundle that is already live.
+
+### Static host (frontend preview only)
+
+The frontend builds to a static bundle, so it can be uploaded to a static host
+to preview the UI. `frontend/vercel.json` holds the Vercel settings: `npm run
+build`, output directory `dist`, and a catch-all rewrite to `/index.html`. Set
+the project's Root Directory to `frontend`.
 
 The rewrite is load-bearing, not cosmetic. `/dashboard` and `/stats` exist only
 inside the router, so without a fallback a direct load or a shared link returns
@@ -61,20 +92,13 @@ the filesystem before applying rewrites, so hashed `/assets/*` files, the
 favicon, and the fonts are still served as files rather than being swallowed by
 the fallback.
 
-This does not produce a working CivicPulse on its own. API calls are relative
-(`/api/complaints`) and Nginx is the component that proxies that prefix to the
-backend, per ADR 0002. A static host has no Nginx, so `/api/...` resolves to
-the static host itself and comes back as the app shell, which the client reports
-as an unusable response instead of data. Two ways out:
-
-- Add a serverless function or proxy rewrite for `/api/*` on the host, pointing
-  at a reachable backend. Keeps the frontend static, but adds a hop and a
-  platform-specific piece to a design that is currently origin-agnostic.
-- Serve the built `dist/` from the same origin as the backend and keep the
-  Nginx proxy in front of it, which is what Compose and Kubernetes already do.
-
-Prefer the second for anything real. Treat a static-host deploy as a way to
-review the frontend, not as a deployment of the system.
+**This is a preview of the frontend, not a deployment of CivicPulse.** API calls
+are relative (`/api/complaints`) and Nginx proxies that prefix to the backend
+per ADR 0002. A static host has no Nginx, so `/api/...` resolves to the static
+host itself and comes back as the app shell, which the client reports as an
+unusable response instead of data. Submitting a complaint, loading the dashboard
+and loading stats will all fail there. For a working system use the Compose
+stack, the Kubernetes manifests, or the Fly.io definitions above.
 
 ## Roll Back
 

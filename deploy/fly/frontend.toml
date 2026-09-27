@@ -1,0 +1,47 @@
+# Fly.io app definition for the nginx-served frontend.
+#
+# The image built by frontend/Dockerfile is deployed as-is. Because the same
+# image is used by compose, Kubernetes and here, the runtime configuration
+# described in ADR 0002 still holds: the backend address arrives as
+# BACKEND_HOST at startup and is substituted into the nginx template by the
+# entrypoint's envsubst. It is never compiled into the bundle.
+
+app = "civicpulse-frontend"
+primary_region = "iad"
+
+# See backend.toml: this resolves against the working directory, so it is
+# deployed as `fly deploy frontend --config ../deploy/fly/frontend.toml` from
+# the repository root.
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # nginx:alpine serves on 80 and does not read PORT, so the internal port is
+  # declared as 80 below rather than parameterising the listen directive, which
+  # would have changed the image every other environment already runs.
+  PORT = "80"
+  # Fly resolves <app>.internal across apps in the same organisation, so this
+  # needs no public address and no CORS grant for normal traffic: the browser
+  # only ever talks to this origin, and nginx proxies /api to the backend.
+  BACKEND_HOST = "civicpulse-backend.internal:8000"
+
+[http_service]
+  internal_port = 80
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  # nginx has no /health endpoint, so this checks that the app is serving its
+  # shell. The backend has a real health route and is checked there instead.
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "3s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

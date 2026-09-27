@@ -154,6 +154,23 @@ kubectl rollout status deployment/civicpulse-backend -n civicpulse --timeout=180
 kubectl get hpa -n civicpulse
 ```
 
+### 3. Run it on a container host
+
+Same images, published to Fly.io with managed Postgres and Redis:
+
+```bash
+fly deploy backend  --config ../deploy/fly/backend.toml
+fly deploy frontend --config ../deploy/fly/frontend.toml
+```
+
+The backend runs `alembic upgrade head` as a release step on every deploy.
+Setup, including creating the apps and attaching the databases, is in
+[deploy/fly/README.md](deploy/fly/README.md).
+
+A static host such as Vercel can serve the frontend bundle for previewing, but
+not this system: the API is same-origin behind nginx (ADR 0002), so a static
+host has no backend to talk to and submitting a complaint will fail.
+
 Full deploy / rollback / log-reading instructions: [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
 ---
