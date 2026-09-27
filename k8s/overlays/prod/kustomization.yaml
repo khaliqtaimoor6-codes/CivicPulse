@@ -32,3 +32,15 @@ patches:
         path: /spec/template/spec/imagePullSecrets
         value:
           - name: ghcr
+  # The alembic Job is not a Deployment, so the two patches above do not reach
+  # it. Without this it hits ImagePullBackOff against the private GHCR package
+  # and the migration times out -- the exact failure this overlay's comment on
+  # the `ghcr` secret already warns about for the Deployments.
+  - target:
+      kind: Job
+      name: civicpulse-migrate
+    patch: |-
+      - op: add
+        path: /spec/template/spec/imagePullSecrets
+        value:
+          - name: ghcr

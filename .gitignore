@@ -10,6 +10,10 @@ __pycache__/
 htmlcov/
 coverage.xml
 coverage.json
+# Editable-install metadata. `pip install -e backend` writes this into the
+# source tree; committing it would pin a developer's local absolute paths.
+*.egg-info/
+.eggs/
 
 # Node and Vite
 node_modules/

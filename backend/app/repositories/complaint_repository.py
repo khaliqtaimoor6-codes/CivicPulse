@@ -1,7 +1,8 @@
+from enum import Enum
 from uuid import UUID
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from app.models import Category, Complaint, Priority, Status
 
@@ -34,7 +35,15 @@ class ComplaintRepository:
 			"by_status": self._grouped_counts(Complaint.status, Status),
 		}
 
-	def _grouped_counts(self, column, enum_type: type) -> dict[str, int]:
+	def _grouped_counts(
+		self,
+		column: InstrumentedAttribute,
+		enum_type: type[Enum],
+	) -> dict[str, int]:
+		# Seeded from the enum rather than from the rows so that a category with
+		# zero complaints still appears as 0 in /api/stats. An aggregate built
+		# only from returned rows would omit it, and the dashboard's category
+		# breakdown would silently lose a column as soon as one bucket emptied.
 		counts = {member.value: 0 for member in enum_type}
 		rows = self.session.execute(
 			select(column, func.count()).group_by(column)

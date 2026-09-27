@@ -83,15 +83,13 @@ spec:
 ---
 # 3. Ingress controller -> frontend and backend.
 #
-#    The Ingress manifest declares `ingressClassName: nginx`, but no nginx
-#    controller is installed in this cluster -- the only IngressClass present
-#    is `traefik.io/ingress-controller`. The Ingress is therefore currently
-#    unserved (status.loadBalancer is empty).
-#
-#    This rule targets traefik because that is the controller that actually
-#    exists, so the allow-list is correct the moment the class mismatch is
-#    fixed in either direction. Until then it is inert. See the report: this
-#    is a pre-existing bug, not something this policy introduces.
+#    This rule targets traefik because that is the controller this cluster
+#    actually installs, and it is now load-bearing rather than aspirational.
+#    The Ingress once declared `ingressClassName: nginx`, which no controller
+#    served, leaving status.loadBalancer empty; 71c839a pointed it at traefik.
+#    The comment recording that mismatch used to sit here and has been
+#    removed rather than left to contradict ingress.yaml:12. Verify the class
+#    is still right with:  kubectl get ingressclass
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -176,6 +174,13 @@ spec:
 #    The counterpart to the frontend rules: the datastores accept traffic from
 #    the backend only, so nothing else in the namespace can reach them even if
 #    a future pod is added without a policy of its own.
+#
+#    `app=civicpulse-migrate` is in the allow-list as well, and is the one
+#    exception to "the backend only". It is the alembic Job
+#    (migration-job.yaml), which runs the backend image's alembic against the
+#    same database and therefore needs the same access -- but must not be
+#    labelled `civicpulse-backend`, or the backend Service would select it as
+#    an endpoint while it is running.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -196,6 +201,9 @@ spec:
         - podSelector:
             matchLabels:
               app: civicpulse-backend
+        - podSelector:
+            matchLabels:
+              app: civicpulse-migrate
       ports:
         - protocol: TCP
           port: 5432
@@ -270,3 +278,32 @@ spec:
           port: 443
         - protocol: TCP
           port: 80
+---
+# 9. migrate -> postgres:5432.
+#
+#    The egress half of rule 6 for the alembic Job. Under default-deny a pod
+#    with `app=civicpulse-migrate` has no egress anywhere except DNS, so
+#    without this the migration fails with a connection timeout rather than a
+#    schema error -- the same silent-dependency shape rule 2 was written
+#    against. Deliberately narrower than the backend's: a migration needs the
+#    database and nothing else, so it gets no Redis, no LLM provider, and no
+#    path to the internet.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-migrate-egress-to-postgres
+  namespace: civicpulse
+spec:
+  podSelector:
+    matchLabels:
+      app: civicpulse-migrate
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432

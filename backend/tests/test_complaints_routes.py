@@ -108,7 +108,9 @@ def test_create_complaint_rejects_invalid_fields(payload: dict) -> None:
 	with TestClient(app) as client:
 		response = client.post("/api/complaints", json=payload)
 
-	assert response.status_code == 422
+	# 400, not FastAPI's default 422: the frozen contract in
+	# docs/API-CONTRACT.md requires 400 with a field-level error body.
+	assert response.status_code == 400
 	assert "detail" in response.json()
 
 

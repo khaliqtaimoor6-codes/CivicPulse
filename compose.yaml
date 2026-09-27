@@ -60,8 +60,40 @@ services:
       TRIAGE_PROVIDER: ${TRIAGE_PROVIDER:-simulated}
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:1b}
+      # Read from the host .env only when TRIAGE_PROVIDER=llm. Passed through
+      # here so the hosted Groq path documented in the README actually works in
+      # the dev stack; compose.prod.yaml already wires the same key. The value
+      # is never committed -- it comes from the environment at up-time.
+      LLM_API_KEY: ${LLM_API_KEY:-}
       RATE_LIMIT_PER_MINUTE: 30
       CORS_ORIGIN: http://localhost:5173
+    # Development only. Mounting the source lets `uvicorn --reload` below pick
+    # up an edit without a rebuild, which is the whole point of a dev stack.
+    #
+    # This is deliberately absent from compose.prod.yaml, and the reason is not
+    # stylistic: in production the image is the immutable unit of deployment.
+    # A bind mount would let a running container's code drift away from the
+    # tag it was rolled out from, so "what is production running?" could no
+    # longer be answered with a commit SHA -- see docs/adr/0003-deploy-by-sha.
+    # It also breaks the multi-stage image story, since the host tree carries
+    # no dependency install and would shadow the venv built into the image.
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/scripts:/app/scripts
+      - ./backend/alembic:/app/alembic
+      - ./backend/alembic.ini:/app/alembic.ini
+    # --reload is dev-only for the same reason. The image's own CMD stays
+    # reload-free so the production image never runs a file watcher.
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
+      - --timeout-graceful-shutdown
+      - "10"
     ports:
       - "8000:8000"
     networks:

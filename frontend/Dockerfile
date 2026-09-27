@@ -7,8 +7,8 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM nginx:alpine AS serve
-# nginx:alpine pins an older alpine package set than the one carrying the
+FROM nginx:1.27-alpine AS serve
+# nginx:1.27-alpine pins an older alpine package set than the one carrying the
 # libexpat fix for CVE-2026-93990 (2.8.5-r0). Upgrade on top of the tag so the
 # image is not left holding a HIGH severity CVE that alpine has already fixed.
 RUN apk upgrade --no-cache

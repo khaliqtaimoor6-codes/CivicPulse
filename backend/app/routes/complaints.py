@@ -140,7 +140,7 @@ def list_complaints(
 	page: int = Query(default=1, ge=1),
 	page_size: int = Query(default=20, ge=1, le=100),
 	service: ComplaintService = Depends(get_complaint_service),
-) -> ComplaintListResponse:
+) -> dict[str, object]:
 	items, total = service.list_complaints(
 		{
 			"category": category,
@@ -150,9 +150,16 @@ def list_complaints(
 		page=page,
 		page_size=page_size,
 	)
-	return ComplaintListResponse(
-		items=items,
-		total=total,
-		page=page,
-		page_size=page_size,
-	)
+	# Returns the ORM rows inside a plain dict and lets FastAPI serialise them
+	# against `response_model=ComplaintListResponse`. Constructing
+	# ComplaintListResponse here would mean handing Pydantic a list[Complaint]
+	# where the model declares list[ComplaintResponse]; it works at runtime
+	# through `from_attributes`, but the handler's own signature would be
+	# claiming to produce a value it has not built. Deferring to response_model
+	# keeps the wire format in one place and the handler honest.
+	return {
+		"items": items,
+		"total": total,
+		"page": page,
+		"page_size": page_size,
+	}

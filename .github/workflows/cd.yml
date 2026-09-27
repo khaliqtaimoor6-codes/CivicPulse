@@ -50,7 +50,10 @@ jobs:
           # checked-out source. See the Backend tests note below.
           python -m pip install -e ".[dev]" ruff==0.11.2 mypy==1.15.0
           ruff check app tests
-          mypy --explicit-package-bases --follow-imports=skip app/providers/triage
+          # Scope comes from [tool.mypy] in backend/pyproject.toml (`files =
+          # ["app"]`), kept identical to ci.yml by reading the same config
+          # rather than repeating flags here.
+          mypy
       - name: Backend tests
         working-directory: backend
         run: |
@@ -201,18 +204,27 @@ jobs:
       # Secret before apply, matching the ordering the manifests require: the
       # deployments reference civicpulse-secrets, so applying them first would
       # leave the pods stuck on CreateContainerConfigError.
+      #
+      # The database password is generated per run rather than read from a
+      # repository secret. This cluster is created and destroyed inside one job
+      # and nothing durable is written to it, so there is nothing for a
+      # long-lived secret to protect; requiring one only meant the job failed
+      # whenever the repository happened to have no POSTGRES_* secret
+      # configured. A fresh random value per run is both more secure and
+      # self-contained.
       - name: Apply registry credentials and runtime Secret
         shell: bash
         env:
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
         run: |
           set -euo pipefail
-          test -n "$POSTGRES_PASSWORD"
-          test -n "$POSTGRES_USER"
-          test -n "$POSTGRES_DB"
+          # TRIAGE_PROVIDER is 'simulated' for this job, so no LLM key is needed
+          # and none is required to be configured on the repository.
+          LLM_API_KEY="${LLM_API_KEY:-}"
+          POSTGRES_USER=civicpulse
+          POSTGRES_DB=civicpulse
+          POSTGRES_PASSWORD="$(openssl rand -hex 16)"
+          echo "generated an ephemeral database password for this run"
           kubectl create namespace civicpulse --dry-run=client -o yaml | kubectl apply -f -
           kubectl create secret docker-registry ghcr -n civicpulse \
             --docker-server=ghcr.io \
@@ -237,6 +249,43 @@ jobs:
           kubectl rollout status deployment/redis -n civicpulse --timeout=180s
           kubectl rollout status deployment/civicpulse-backend -n civicpulse --timeout=180s
           kubectl rollout status deployment/civicpulse-frontend -n civicpulse --timeout=180s
+
+      # Postgres is up at this point but the schema is not: nothing else in the
+      # deploy path runs alembic, and the API smoke test below POSTs a
+      # complaint, which needs the `complaints` table. Without this step the
+      # run gets past the Ingress test (that endpoint touches no tables) and
+      # dies on a 500 here, after the images and rollouts have already
+      # succeeded.
+      #
+      # The Job itself is applied by "Apply manifests"; this step only waits
+      # for it. It dumps the Job rather than timing out silently so a bad
+      # revision is readable from the run page instead of being reproduced
+      # locally, and it checks the Failed condition so an image-pull or
+      # connection failure surfaces immediately instead of holding the 180s.
+      - name: Run database migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 180))
+          until kubectl -n civicpulse wait --for=condition=complete \
+              job/civicpulse-migrate --timeout=5s >/dev/null 2>&1; do
+            if kubectl -n civicpulse get job civicpulse-migrate \
+                -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}' \
+                2>/dev/null | grep -q True; then
+              echo "migration job reported Failed" >&2
+              kubectl -n civicpulse describe job civicpulse-migrate >&2 || true
+              kubectl -n civicpulse logs job/civicpulse-migrate --tail=50 >&2 || true
+              exit 1
+            fi
+            if (( SECONDS >= deadline )); then
+              echo "timed out waiting for migrations" >&2
+              kubectl -n civicpulse describe job civicpulse-migrate >&2 || true
+              kubectl -n civicpulse logs job/civicpulse-migrate --tail=50 >&2 || true
+              exit 1
+            fi
+            sleep 3
+          done
+          echo "alembic is at head; the API smoke test can now write a row"
 
       - name: Smoke test the Ingress
         shell: bash

@@ -1,9 +1,11 @@
 from uuid import UUID
 import logging
 
+import redis
+
 from app.models import Complaint
 from app.models import Status
-from app.providers.triage.base import TriageProvider
+from app.providers.triage.base import TriageProvider, TriageResult
 from app.providers.triage.rules import RuleBasedTriage
 from app.repositories.complaint_repository import ComplaintRepository
 from app.services.triage_service import TriageService
@@ -30,10 +32,21 @@ class ComplaintNotFoundError(LookupError):
 
 
 class _NoopCache:
-	def get_triage_result(self, text: str, location: str):
+	"""Stands in for TriageCache when no Redis is wired up.
+
+	Used by the unit tests and by any caller that constructs a ComplaintService
+	without a cache. Implements the TriageCache protocol structurally, so
+	TriageService accepts it exactly as it accepts RedisCacheProvider.
+	"""
+
+	def get_triage_result(
+		self, text: str, location: str
+	) -> TriageResult | None:
 		return None
 
-	def set_triage_result(self, text: str, location: str, result) -> None:
+	def set_triage_result(
+		self, text: str, location: str, result: TriageResult
+	) -> None:
 		return None
 
 
@@ -43,7 +56,7 @@ class ComplaintService:
 		repository: ComplaintRepository,
 		triage_provider: TriageProvider | None = None,
 		triage_service: TriageService | None = None,
-		stats_cache=None,
+		stats_cache: redis.Redis | None = None,
 	) -> None:
 		self.repository = repository
 		self.stats_cache = stats_cache
@@ -72,7 +85,11 @@ class ComplaintService:
 				"reporter_contact": reporter_contact,
 				"category": triage_result.category,
 				"priority": triage_result.priority,
-				"status": "open",
+				# Status.open, not the bare string "open". The string happened to
+				# work because the Enum column coerces it on the way to the
+				# database, but the object handed back before any round-trip
+				# still carried a str, and transition_status reads .value off it.
+				"status": Status.open,
 				"ai_summary": triage_result.summary,
 				"triaged_by": triaged_by,
 				"triage_latency_ms": self.triage_service.last_latency_ms,
