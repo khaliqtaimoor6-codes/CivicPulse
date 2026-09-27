@@ -1,0 +1,100 @@
+# The cluster's single migration runner.
+#
+# Why this file exists: the backend image's CMD is uvicorn and nothing else
+# (backend/Dockerfile:34), so on a fresh database no table exists until
+# `alembic upgrade head` has run once. Nothing in the deploy path ran it --
+# `alembic upgrade head` appears exactly once in .github/workflows, inside the
+# *test* job against a throwaway database, and nowhere in this directory.
+# CD's API smoke test then POSTed a complaint, got a 500 for a missing
+# `complaints` table, and failed *after* the images and rollouts had already
+# succeeded. ci.yml's integration job sidesteps the same gap by running
+# `docker compose exec backend alembic upgrade head` before its own POST
+# (ci.yml:279-287); this manifest is that step expressed for Kubernetes.
+#
+# A Job rather than an initContainer on the Deployment: the backend runs
+# replicas: 2, so an initContainer would run the same DDL twice concurrently
+# and one pod would lose the race. A Job runs it exactly once.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: civicpulse-migrate
+  namespace: civicpulse
+  labels:
+    app: civicpulse-migrate
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app: civicpulse-migrate
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        # PostgreSQL initialises its volume on first boot, so this Job is
+        # created at the same instant as the database and loses that race by
+        # default. Waiting on a TCP connect here keeps backoffLimit's retries
+        # for alembic itself instead of spending them all on
+        # connection-refused. Deliberately reuses the backend image rather
+        # than pulling a second one: no new registry dependency, and the
+        # digest is already warm.
+        - name: wait-for-postgres
+          image: ghcr.io/khaliqtaimoor6-codes/civicpulse-backend:placeholder
+          command:
+            - python
+            - -c
+            - |
+              import socket, sys, time
+              deadline = time.time() + 120
+              while time.time() < deadline:
+                  try:
+                      socket.create_connection(("postgres", 5432), 2).close()
+                      print("postgres is accepting connections")
+                      sys.exit(0)
+                  except OSError:
+                      time.sleep(2)
+              print("postgres never became reachable", file=sys.stderr)
+              sys.exit(1)
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+      containers:
+        - name: migrate
+          # CD replaces this placeholder with an immutable image reference,
+          # exactly as it does for backend-deployment.yaml, so the migration
+          # is always the alembic revision shipped inside the image being
+          # deployed rather than whatever the runner happens to check out.
+          image: ghcr.io/khaliqtaimoor6-codes/civicpulse-backend:placeholder
+          command:
+            - alembic
+            - upgrade
+            - head
+          envFrom:
+            - configMapRef:
+                name: civicpulse-config
+          env:
+            # Both are required, not optional. Settings declares database_url
+            # and redis_url with no default and get_settings() raises at
+            # import time -- which happens inside alembic's own env.py:17 -- if
+            # either is absent. Alembic never touches Redis, but it still
+            # boots through the same Settings object the app does. config.py:7-8
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: civicpulse-secrets
+                  key: DATABASE_URL
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: civicpulse-secrets
+                  key: REDIS_URL
+          resources:
+            requests:
+              cpu: 25m
+              memory: 96Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi

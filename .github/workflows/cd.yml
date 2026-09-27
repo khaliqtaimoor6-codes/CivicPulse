@@ -250,6 +250,43 @@ jobs:
           kubectl rollout status deployment/civicpulse-backend -n civicpulse --timeout=180s
           kubectl rollout status deployment/civicpulse-frontend -n civicpulse --timeout=180s
 
+      # Postgres is up at this point but the schema is not: nothing else in the
+      # deploy path runs alembic, and the API smoke test below POSTs a
+      # complaint, which needs the `complaints` table. Without this step the
+      # run gets past the Ingress test (that endpoint touches no tables) and
+      # dies on a 500 here, after the images and rollouts have already
+      # succeeded.
+      #
+      # The Job itself is applied by "Apply manifests"; this step only waits
+      # for it. It dumps the Job rather than timing out silently so a bad
+      # revision is readable from the run page instead of being reproduced
+      # locally, and it checks the Failed condition so an image-pull or
+      # connection failure surfaces immediately instead of holding the 180s.
+      - name: Run database migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 180))
+          until kubectl -n civicpulse wait --for=condition=complete \
+              job/civicpulse-migrate --timeout=5s >/dev/null 2>&1; do
+            if kubectl -n civicpulse get job civicpulse-migrate \
+                -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}' \
+                2>/dev/null | grep -q True; then
+              echo "migration job reported Failed" >&2
+              kubectl -n civicpulse describe job civicpulse-migrate >&2 || true
+              kubectl -n civicpulse logs job/civicpulse-migrate --tail=50 >&2 || true
+              exit 1
+            fi
+            if (( SECONDS >= deadline )); then
+              echo "timed out waiting for migrations" >&2
+              kubectl -n civicpulse describe job civicpulse-migrate >&2 || true
+              kubectl -n civicpulse logs job/civicpulse-migrate --tail=50 >&2 || true
+              exit 1
+            fi
+            sleep 3
+          done
+          echo "alembic is at head; the API smoke test can now write a row"
+
       - name: Smoke test the Ingress
         shell: bash
         run: |

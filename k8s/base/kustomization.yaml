@@ -17,3 +17,4 @@ resources:
   - backend-hpa.yaml
   - backend-pdb.yaml
   - backend-vpa.yaml
+  - migration-job.yaml
