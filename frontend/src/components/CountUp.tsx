@@ -11,6 +11,20 @@ function format(value: number): string {
 }
 
 /**
+ * True when the viewer has asked for reduced motion.
+ *
+ * `matchMedia` is missing in jsdom and in some embedded webviews, and reading
+ * it unguarded threw inside the effect below, which took the whole surrounding
+ * page down with it rather than just skipping an animation. Where the
+ * preference cannot be read we report `true`: showing the figure at its final
+ * value is always correct, and animating is the part that can go wrong.
+ */
+function prefersReducedMotion(): boolean {
+	if (typeof window === "undefined" || typeof window.matchMedia !== "function") return true;
+	return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/**
  * Counts a figure up to its final value on mount.
  *
  * The animation writes straight to the DOM node's textContent rather than
@@ -25,7 +39,12 @@ export default function CountUp({ value, duration = 1500, className }: CountUpPr
 		const node = ref.current;
 		if (!node) return;
 
-		if (value <= 0 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+		if (value <= 0 || prefersReducedMotion()) {
+			node.textContent = format(value);
+			return;
+		}
+
+		if (typeof requestAnimationFrame !== "function") {
 			node.textContent = format(value);
 			return;
 		}
