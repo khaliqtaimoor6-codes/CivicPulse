@@ -16,7 +16,15 @@ class RuleBasedTriage:
 
 	@staticmethod
 	def _category_for(lowered_text: str) -> Category:
-		if any(keyword in lowered_text for keyword in ("streetlight", "lamp")):
+		# Bare "lamp" matched inside "clamp" and "lamplight", so a report
+		# about a clamped pipe was filed as a streetlight and never showed up
+		# on the water dashboard. Replacing it with the two spellings people
+		# actually use keeps the substring test, which is what the rest of
+		# this table relies on, and still catches the real complaints.
+		if any(
+			keyword in lowered_text
+			for keyword in ("streetlight", "lamp post", "lamppost")
+		):
 			return Category.streetlights
 		if any(keyword in lowered_text for keyword in ("water", "leak", "flooding")):
 			return Category.water
