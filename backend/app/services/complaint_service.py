@@ -72,7 +72,11 @@ class ComplaintService:
 				"reporter_contact": reporter_contact,
 				"category": triage_result.category,
 				"priority": triage_result.priority,
-				"status": "open",
+				# Status.open, not the bare string "open". The string happened to
+				# work because the Enum column coerces it on the way to the
+				# database, but the object handed back before any round-trip
+				# still carried a str, and transition_status reads .value off it.
+				"status": Status.open,
 				"ai_summary": triage_result.summary,
 				"triaged_by": triaged_by,
 				"triage_latency_ms": self.triage_service.last_latency_ms,

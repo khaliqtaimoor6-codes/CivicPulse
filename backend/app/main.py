@@ -8,6 +8,8 @@ from time import perf_counter
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -68,6 +70,22 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
 
 settings = get_settings()
 app = FastAPI(title="CivicPulse API", lifespan=lifespan)
+
+# The frozen contract (assignment 2.2, and docs/API-CONTRACT.md) specifies
+# "400 with a field-level error body" for a rejected payload. FastAPI's default
+# for a RequestValidationError is 422, so without this handler the API
+# answered 422 and disagreed with its own published contract. The body is left
+# exactly as FastAPI built it -- a per-field list under "detail" -- so the
+# field-level detail is preserved and only the status code is corrected.
+@app.exception_handler(RequestValidationError)
+async def handle_validation_error(
+	request: Request, error: RequestValidationError
+) -> JSONResponse:
+	# jsonable_encoder for the same reason FastAPI's own default handler uses
+	# it: a rejected payload can contain values (bytes, arbitrary objects) that
+	# json.dumps cannot serialise, and an unhandled TypeError here would turn a
+	# clean 400 into a 500.
+	return JSONResponse(status_code=400, content={"detail": jsonable_encoder(error.errors())})
 
 app.add_middleware(
 	CORSMiddleware,
