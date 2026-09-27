@@ -1,4 +1,3 @@
-import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -11,9 +10,13 @@ class MockObserver {
 	readonly root = null;
 	readonly rootMargin = "";
 	readonly thresholds: readonly number[] = [];
+	readonly scrollMargin = "";
 	takeRecords = () => [] as IntersectionObserverEntry[];
 
-	constructor(public callback: IntersectionObserverCallback) {
+	private readonly callback: IntersectionObserverCallback;
+
+	constructor(callback: IntersectionObserverCallback) {
+		this.callback = callback;
 		observers.push(this);
 	}
 

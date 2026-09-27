@@ -1,58 +1,61 @@
 import "@testing-library/jest-dom/vitest";
-import { afterEach, vi } from "vitest";
+import { afterEach } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 /**
  * jsdom implements neither matchMedia nor IntersectionObserver, and both are
- * used by real components. Without these stubs a component that reads a
- * browser API in an effect throws during mount, React tears down the tree, and
- * the test fails on missing content rather than on the real assertion.
+ * read by real components. Without these stubs a component that touches a
+ * browser API in an effect fails during mount, React tears down the tree, and
+ * the test then reports missing page content instead of the assertion it meant
+ * to check.
  *
- * jsdom's IntersectionObserver stub reports the element as visible, matching
- * the "nothing to wait for" fallback the components use in its absence, so
- * reveal animations do not need timers to be advanced in tests.
+ * Assigned directly rather than through vi.stubGlobal, because a test that
+ * calls vi.unstubAllGlobals must not strip the environment the rest of the
+ * suite depends on.
  */
 
-if (!window.matchMedia) {
-	window.matchMedia = ((query: string) => ({
-		matches: false,
-		media: query,
-		onchange: null,
-		addListener: vi.fn(),
-		removeListener: vi.fn(),
-		addEventListener: vi.fn(),
-		removeEventListener: vi.fn(),
-		dispatchEvent: vi.fn(),
-	})) as unknown as typeof window.matchMedia;
+function define(target: object, key: string, value: unknown): void {
+	Object.defineProperty(target, key, { configurable: true, writable: true, value });
 }
 
-if (!("IntersectionObserver" in window)) {
-	class TestIntersectionObserver implements IntersectionObserver {
-		readonly root = null;
-		readonly rootMargin = "";
-		readonly thresholds: readonly number[] = [];
-		constructor(private readonly callback: IntersectionObserverCallback) {}
-		observe(target: Element): void {
-			this.callback(
-				[
-					{
-						isIntersecting: true,
-						target,
-					} as IntersectionObserverEntry,
-				],
-				this,
-			);
-		}
-		unobserve(): void {}
-		disconnect(): void {}
-		takeRecords(): IntersectionObserverEntry[] {
-			return [];
-		}
+define(window, "matchMedia", (query: string) => ({
+	matches: false,
+	media: query,
+	onchange: null,
+	addListener: () => {},
+	removeListener: () => {},
+	addEventListener: () => {},
+	removeEventListener: () => {},
+	dispatchEvent: () => false,
+}));
+
+class VisibleObserver {
+	readonly root = null;
+	readonly rootMargin = "";
+	readonly thresholds: readonly number[] = [];
+	readonly scrollMargin = "";
+	readonly #callback: IntersectionObserverCallback;
+
+	constructor(callback: IntersectionObserverCallback) {
+		this.#callback = callback;
 	}
-	window.IntersectionObserver = TestIntersectionObserver as unknown as typeof IntersectionObserver;
-	globalThis.IntersectionObserver =
-		window.IntersectionObserver as unknown as typeof globalThis.IntersectionObserver;
+
+	observe(target: Element): void {
+		// Report the element as visible straight away, which is the same
+		// outcome the components fall back to when no observer exists, so
+		// reveal animations need no timer control in tests.
+		this.#callback([{ isIntersecting: true, target } as IntersectionObserverEntry], this as never);
+	}
+
+	unobserve(): void {}
+	disconnect(): void {}
+	takeRecords(): IntersectionObserverEntry[] {
+		return [];
+	}
 }
+
+define(window, "IntersectionObserver", VisibleObserver);
+define(globalThis, "IntersectionObserver", VisibleObserver);
 
 afterEach(() => {
 	cleanup();
