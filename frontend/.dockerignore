@@ -8,3 +8,8 @@ dist
 coverage
 **/*.test.*
 **/*.spec.*
+# The glob above is here to keep test sources out of the image, but it also
+# matches tsconfig.test.json by name. That file is build configuration and the
+# image runs tsc -b, so it has to be present or the build cannot resolve the
+# project reference.
+!tsconfig.test.json

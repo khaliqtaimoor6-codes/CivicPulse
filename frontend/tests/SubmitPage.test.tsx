@@ -1,7 +1,6 @@
-import "@testing-library/jest-dom/vitest";
-import React from "react";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createComplaint } from "../src/api/client";
@@ -32,9 +31,16 @@ const successfulComplaint = {
 	updated_at: "2026-09-25T00:00:00Z",
 };
 
-function renderForm() {
-	return render(<SubmitPage />);
-}
+  // The "Track reports" CTAs are react-router links, so the page needs a router
+  // above it the same way SiteHeader does for its NavLinks. Rendering it bare
+  // threw on useHref instead of failing on an assertion.
+  function renderForm() {
+  	return render(
+  		<MemoryRouter>
+  			<SubmitPage />
+  		</MemoryRouter>,
+  	);
+  }
 
 describe("SubmitPage", () => {
 	it("renders complaint, location, and optional contact fields", () => {

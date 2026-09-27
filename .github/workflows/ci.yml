@@ -62,7 +62,11 @@ jobs:
 
       - name: TypeScript
         working-directory: frontend
-        run: npx tsc --noEmit
+        # -b is required, not optional: the root tsconfig is solution-style, so
+        # it lists no files of its own and holds the real configuration in
+        # referenced projects. Plain --noEmit typechecks none of them and
+        # passes unconditionally.
+        run: npx tsc -b
 
   test-backend:
     name: Backend tests
@@ -117,6 +121,47 @@ jobs:
         working-directory: backend
         run: pytest --cov=app --cov-fail-under=65
 
+      - name: Set up Node for the schema drift check
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # The drift check compares the live OpenAPI document against
+      # src/api/types.ts, so it needs an API to read it from. Starting one here
+      # and tearing it down in the same step keeps the background process from
+      # leaking into the steps that follow.
+      - name: Check the OpenAPI schemas against the frontend types
+        env:
+          BACKEND_URL: http://127.0.0.1:8000
+        run: |
+          set -euo pipefail
+          cd backend
+          uvicorn app.main:app --host 127.0.0.1 --port 8000 &
+          api_pid=$!
+          trap 'kill "$api_pid" 2>/dev/null || true' EXIT
+
+          ready=0
+          for _ in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8000/health >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "The API never became healthy, so the schema check cannot run." >&2
+            exit 1
+          fi
+
+          cd ../frontend
+          npm run check:openapi
+
   test-frontend:
     name: Frontend tests
     permissions:
@@ -137,14 +182,9 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Run Vitest when configured
+      - name: Run frontend tests
         working-directory: frontend
-        run: |
-          if node -e "process.exit(require('./package.json').scripts?.test ? 0 : 1)"; then
-            npm test -- --run
-          else
-            echo "No Vitest test script is configured yet; skipping until frontend tests land."
-          fi
+        run: npm test
 
   build:
     name: Build images
