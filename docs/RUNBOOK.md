@@ -47,36 +47,14 @@ already picks up the current Secret, so the restart was redundant work. The
 trade-off is that the manual step above now exists for the rotation case, which
 CD does not perform. Revisit if automated rotation is ever added.
 
-### Container host (Fly.io)
+### Hosting outside the graded scope
 
-`deploy/fly/` holds app definitions that deploy the images this repository
-already builds, unmodified, as containers. Choose this over a static host when
-you want the system online, because the backend, Postgres and Redis have to run
-somewhere and a static host runs none of them.
-
-```bash
-fly apps create civicpulse-backend
-fly apps create civicpulse-frontend
-
-fly postgres create --name civicpulse-db --region iad
-fly postgres attach --app civicpulse-backend civicpulse-db
-fly redis create --name civicpulse-cache --region iad
-fly redis attach --app civicpulse-backend --redis-name civicpulse-cache
-
-fly secrets set --app civicpulse-backend CORS_ORIGIN=https://civicpulse-frontend.fly.dev
-
-fly deploy backend  --config ../deploy/fly/backend.toml
-fly deploy frontend --config ../deploy/fly/frontend.toml
-```
-
-The working directory argument is the build context, and `--config` is resolved
-relative to it, hence the `../deploy/...` paths from the repository root. See
-`deploy/fly/README.md` for the reasoning and for what the setup does not cover.
-
-`backend.toml` sets `release_command = "alembic upgrade head"` so the schema is
-applied once per deploy before new instances take traffic, which is the job
-`k8s/base/migration-job.yaml` does on Kubernetes. Deploy the backend before the
-frontend so the API contract stays stable for a bundle that is already live.
+Compose, the Kubernetes overlays, and the `cd.yml` pipeline are the deployment
+paths this project supports and the ones §1.4 and §5.8 ask for. A static host
+such as Vercel can serve the frontend bundle for previewing, but it is not a
+deployment of this system, and no third platform is configured. What was
+looked at, and why it was dropped, is written up in
+[exploration/hosting-options.md](exploration/hosting-options.md).
 
 ### Static host (frontend preview only)
 
@@ -98,7 +76,7 @@ per ADR 0002. A static host has no Nginx, so `/api/...` resolves to the static
 host itself and comes back as the app shell, which the client reports as an
 unusable response instead of data. Submitting a complaint, loading the dashboard
 and loading stats will all fail there. For a working system use the Compose
-stack, the Kubernetes manifests, or the Fly.io definitions above.
+stack or the Kubernetes manifests.
 
 ## Roll Back
 
