@@ -37,7 +37,13 @@ jobs:
 
       - name: Mypy
         working-directory: backend
-        run: mypy --explicit-package-bases --follow-imports=skip app/providers/triage
+        # Scope comes from [tool.mypy] in backend/pyproject.toml, which sets
+        # `files = ["app"]`. This previously read
+        # `mypy --follow-imports=skip app/providers/triage`, checking 6 of the
+        # package's 23 files and reporting clean while nine real type errors sat
+        # in routes/, services/ and repositories/. The flags are now in the
+        # config file so ci.yml and cd.yml cannot drift apart.
+        run: mypy
 
       - name: Set up Node
         uses: actions/setup-node@v4

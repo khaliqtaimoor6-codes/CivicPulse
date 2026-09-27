@@ -48,8 +48,12 @@ def configure_logging() -> None:
 		handler.setFormatter(JsonFormatter())
 		root_logger.addHandler(handler)
 	else:
-		for handler in root_logger.handlers:
-			handler.setFormatter(JsonFormatter())
+		# Iterate under a different name than the StreamHandler bound above.
+		# Reusing `handler` narrowed the inferred type to StreamHandler in the
+		# first branch, so assigning a plain logging.Handler here was a type
+		# error even though both are valid at runtime.
+		for existing_handler in root_logger.handlers:
+			existing_handler.setFormatter(JsonFormatter())
 
 
 configure_logging()

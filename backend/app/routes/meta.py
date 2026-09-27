@@ -6,7 +6,6 @@ from pydantic import BaseModel
 from app.config import get_settings
 
 router = APIRouter(prefix="/meta", tags=["meta"])
-recent_triage_outcomes: deque[dict[str, object]] = deque(maxlen=20)
 
 
 class TriageOutcome(BaseModel):
@@ -20,13 +19,22 @@ class ProviderMetaResponse(BaseModel):
 	recent_triages: list[TriageOutcome]
 
 
+# Typed as deque[TriageOutcome], not deque[dict[str, object]]. The previous
+# annotation described the dicts this buffer used to hold, and Pydantic silently
+# coerced each one on the way into ProviderMetaResponse. Storing the model
+# directly makes the buffer's contents the same type the response declares, so
+# the /api/meta/providers payload is validated once, on write, instead of on
+# every read of the last-20 window.
+recent_triage_outcomes: deque[TriageOutcome] = deque(maxlen=20)
+
+
 def record_triage(provider: str, latency_ms: int) -> None:
 	recent_triage_outcomes.append(
-		{
-			"provider": provider,
-			"latency_ms": latency_ms,
-			"was_fallback": provider == "rules:fallback",
-		}
+		TriageOutcome(
+			provider=provider,
+			latency_ms=latency_ms,
+			was_fallback=provider == "rules:fallback",
+		)
 	)
 
 

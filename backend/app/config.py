@@ -21,4 +21,12 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-	return Settings()
+	# `database_url` and `redis_url` are required fields, but they are supplied
+	# by the environment (compose `environment:`, the k8s ConfigMap and Secret,
+	# or GitHub Secrets in CI) rather than at the call site. mypy only sees the
+	# constructor call and cannot know that, so the two `call-arg` errors it
+	# reports here are false positives. Settings() raises ValidationError at
+	# import time if either variable is genuinely absent, which is the intended
+	# fail-fast behaviour -- a missing DSN should stop the process booting, not
+	# surface later as a connection error on the first request.
+	return Settings()  # type: ignore[call-arg]

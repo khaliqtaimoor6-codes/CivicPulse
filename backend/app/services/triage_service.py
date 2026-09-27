@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from time import perf_counter
 
 from app.metrics import TRIAGE_FALLBACK_COUNT, TRIAGE_LATENCY
-from app.providers.cache.redis_provider import RedisCacheProvider
+from app.providers.cache.redis_provider import TriageCache
 from app.providers.triage.base import TriageProvider, TriageResult
 from app.providers.triage.rules import RuleBasedTriage
 from app.routes.meta import record_triage
@@ -15,7 +15,7 @@ class TriageService:
 		self,
 		primary_provider: TriageProvider,
 		fallback_provider: RuleBasedTriage,
-		cache: RedisCacheProvider,
+		cache: TriageCache,
 		timeout_seconds: float = 10.0,
 	) -> None:
 		self.primary_provider = primary_provider

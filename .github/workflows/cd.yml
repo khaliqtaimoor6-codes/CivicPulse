@@ -50,7 +50,10 @@ jobs:
           # checked-out source. See the Backend tests note below.
           python -m pip install -e ".[dev]" ruff==0.11.2 mypy==1.15.0
           ruff check app tests
-          mypy --explicit-package-bases --follow-imports=skip app/providers/triage
+          # Scope comes from [tool.mypy] in backend/pyproject.toml (`files =
+          # ["app"]`), kept identical to ci.yml by reading the same config
+          # rather than repeating flags here.
+          mypy
       - name: Backend tests
         working-directory: backend
         run: |
