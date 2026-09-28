@@ -9,7 +9,12 @@ CATEGORY_KEYWORDS: tuple[tuple[Category, tuple[str, ...]], ...] = (
 	# dashboard. These are the two spellings people actually use, and the
 	# substring test the rest of this table relies on still works.
 	(Category.streetlights, ("streetlight", "lamp post", "lamppost", "lamplight")),
-	(Category.water, ("flooding", "water", "leak")),
+	# Bare "leak" matched any leak at all, so a gas leak was filed as a water
+	# complaint and never reached the engineer qualified to handle it. The
+	# water-specific compounds people actually write are listed instead; a
+	# report that only says "leak" with no water context now falls through to
+	# `other` and keeps its high priority.
+	(Category.water, ("flooding", "water", "water main", "pipe leak", "leaking pipe", "burst pipe", "hydrant leak")),
 	(Category.electricity, ("wire", "power", "electric")),
 	(Category.sanitation, ("garbage", "sewage", "drain")),
 	# A bare "street" would also catch "streetlight" and "Main Street" in
