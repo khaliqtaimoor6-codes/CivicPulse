@@ -140,6 +140,21 @@ A larger model was not evaluated: `llama3.2:3b` could not be measured on the
 out. `OLLAMA_MODEL` is a single-environment-variable swap once adequate
 hardware is available. See "Known fix path" above.
 
+## Content-hash triage cache and measured hit rate
+
+Every verdict is memoised in Redis under
+`triage:{sha256("<len>:<text><location>")}` with a 24-hour TTL
+(`backend/app/providers/cache/redis_provider.py:52-55`). A HIT returns the
+stored `TriageResult` with `triage_latency_ms = 0` and the same `triaged_by`
+attribution as a live call (`backend/app/services/triage_service.py:32-36`),
+so repeats of the same report — the common case is residents re-reporting
+one outage — cost zero LLM calls.
+
+Measured live on 2026-09-28 (`llm:groq`): five sequential POSTs of one
+identical complaint came back `455, 0, 0, 0, 0` ms — the first call MISSed,
+all four repeats HIT, i.e. **100% hit rate on repeated content, 80% overall**.
+Full commands and output: `docs/evidence/triage-cache-hit-rate.txt`.
+
 ## Demo guidance
 
 For a live category-plus-priority demonstration, use `rules` or `simulated`.

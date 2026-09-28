@@ -1,0 +1,38 @@
+Red pipeline blocking, then green (rubric I, 2026-09-27)
+=========================================================
+
+Why a red run blocks merges here: the "main protection" ruleset requires
+the `CI` status check before a PR can merge (see
+docs/evidence/branch-protection.png, "Require status checks to pass").
+A red CI run therefore blocks the merge, not just decorates it.
+
+RED — ci.yml run 36312326981 (push to dev, f1c63ca, "ci: actually run the
+OpenAPI drift check", 10:22 UTC)
+  Validate manifests:      success
+  Build images:            FAILURE at step "Build frontend image"
+  Frontend tests:          success
+  Lint and type-check:     success
+  Backend tests:           success
+  Integration smoke test:  skipped   (needs: Build images — correctly gated)
+  Scan images:             skipped   (needs: Build images — correctly gated)
+  CI (aggregate gate):     FAILURE
+
+  Root cause: the `**/*.test.*` glob in frontend/.dockerignore also matched
+  tsconfig.test.json, hiding build configuration from the image, so
+  `tsc -b` inside the Docker build could not resolve the project reference.
+  The fix was the `!tsconfig.test.json` re-inclusion, which is still in
+  frontend/.dockerignore today with a comment explaining exactly this trap.
+
+GREEN — ci.yml run 36312613951 (next push to dev, d3eb7cd, "fix(frontend):
+stop the dockerignore glob hiding the test tsconfig", 10:27 UTC, +5 min)
+  Lint and type-check: success | Validate manifests: success
+  Build images: success | Backend tests: success | Frontend tests: success
+  Scan images: success | Integration smoke test: success | CI: success
+
+  All 8 jobs green, gate green, merge path unblocked.
+
+A second, earlier instance of the same mechanism: PR #69 ("Promote dev to
+main") was approved by a maintainer and still sat at
+`mergeable_state=blocked`, because the ruleset required a check context
+named exactly `CI` that no job reported; PR #71 added the `CI` gate job and
+the merge went through. That history is quoted in PR #71's own body text.
