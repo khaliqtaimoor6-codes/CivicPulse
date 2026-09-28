@@ -404,13 +404,73 @@ Measured from the repository root on 2026-09-25:
 | --- | ---: |
 | Backend context before `.dockerignore` | 11.73 MiB (12,294,896 bytes) |
 | Docker build context after `.dockerignore` | 29.06 kB |
+| Frontend context before `.dockerignore` | 237.4 MB |
+| Frontend context after `.dockerignore` | 559.1 kB |
 | Built `civicpulse-backend` image | 323 MB (322,955,960 bytes) |
+
+The backend "after" figure above predates two cache-directory exclusions and
+was re-measured on 2026-09-28 with the daemon's own reporting
+(`DOCKER_BUILDKIT=0 docker build --no-cache`, "Sending build context to
+Docker daemon"): **125 MB before → 202.2 kB after** for the backend,
+**237.4 MB → 559.1 kB** for the frontend. Method for both pairs: the
+"before" build ran with `.dockerignore` temporarily moved aside and restored
+immediately afterwards (`git diff` confirms only the intended file changed);
+the "after" build ran with it in place. The backend "before" is dominated by
+`.mypy_cache/` (125 MB), which was missing from `backend/.dockerignore`
+until this pass added `.mypy_cache/` and `.ruff_cache/` alongside the
+already-excluded `.pytest_cache/` and `.coverage` — none of those paths is
+referenced by any `COPY` in `backend/Dockerfile`, so excluding them only
+shrinks the transfer and cannot break the build (verified with a real
+no-cache build). The frontend "before" is `node_modules/` + `dist/`. Per
+BuildKit's lazy per-stage transfers, `docker buildx --progress=plain`
+"transferring context" lines understate the total and were not used.
 
 The image build succeeded. `docker run --rm civicpulse-backend which gcc` exited
 with code 1, confirming that the final image does not contain the compiler
 toolchain. A bare container launch without `DATABASE_URL` and `REDIS_URL` exits
 during application configuration; the Compose deployment supplies those required
 settings.
+
+### The two indexes and the queries they serve
+
+`backend/alembic/versions/0001_initial_schema.py:84-89` creates
+`ix_complaints_status_priority` on `(status, priority)`. It serves the
+dashboard list query: `ComplaintService.list_complaints`
+(`backend/app/services/complaint_service.py:113-121`) delegates to
+`ComplaintRepository.list` (`backend/app/repositories/complaint_repository.py:55-76`),
+which builds `WHERE status = ? AND priority = ?` (plus an optional category)
+with `LIMIT`/`OFFSET` pagination. The composite key matches the two filters
+the dashboard always sends together; `category` is left out of the key
+because it is the least-used filter and a wider key costs more on every
+write. Honestly measured on 2026-09-28 at 200 rows, `EXPLAIN` on that exact
+query shape shows a sequential scan — the planner is right at this size, and
+the index is there for table growth, not for today's row count.
+
+`0001_initial_schema.py:90-94` creates `ix_complaints_created_at` on
+`(created_at)`. No current query filters or orders by that column (verified:
+its only code use is the response field at
+`backend/app/routes/complaints.py:44`). It is kept deliberately for the
+newest-first listing and time-window queries the dashboard will need next,
+at the cost of one small btree — stated as forward-looking rather than
+pretending a query exists that does not.
+
+### Why Redis runs AOF on a named volume
+
+Redis starts as `redis-server --appendonly yes` (`compose.yaml:22`) with its
+data directory on the named volume `redisdata` (`compose.yaml:24`, declared
+at `compose.yaml:176`; the three named volumes are `pgdata`, `redisdata`,
+`ollama_models`). Three things live in Redis: the `/api/stats` read-through
+cache, the triage content-hash memo, and the rate-limiter windows. Without
+persistence, every Redis restart cold-starts all three at once: every repeat
+complaint re-trips a paid LLM call, rate windows reset (an abuse window), and
+stats stampede to MISS. AOF with the default every-second fsync bounds the
+loss to about a second of writes; an RDB snapshot can lose minutes, and
+`fsync`-every-write would halve throughput for no benefit since all three
+datasets are recomputable from Postgres anyway. So AOF is the middle setting
+that matches the data: cheap to keep, cheap to lose, expensive to rebuild
+all at once. Restart persistence is captured in
+`docs/evidence/persistence-compose.txt` (Compose) and
+`docs/evidence/persistence-kubernetes.txt` (the `redisdata` claim, line 59).
 
 ---
 
