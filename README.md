@@ -305,6 +305,12 @@ providers`. A route that opens a database session is a design failure, and the
 layering is enforced by convention and review rather than by a framework.
 
 ---
+## Screenshots
+<img width="1766" height="895" alt="image" src="https://github.com/user-attachments/assets/e1741402-1477-46e8-8e6d-4419dbe1338f" />
+<img width="1785" height="933" alt="image" src="https://github.com/user-attachments/assets/d67ae1a9-2467-4038-990e-ebeb88924169" />
+<img width="1731" height="900" alt="image" src="https://github.com/user-attachments/assets/13a20b20-2123-413c-9625-e853e1ec8892" />
+
+
 
 ## License
 
