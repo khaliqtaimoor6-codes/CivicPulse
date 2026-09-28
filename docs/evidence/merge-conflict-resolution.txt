@@ -28,51 +28,16 @@ class RuleBasedTriage:
 	def triage(self, text: str, location: str) -> TriageResult:
 		lowered_text = text.lower()
 
-		return TriageResult(
-			category=self._category_for(lowered_text),
-			priority=self._priority_for(lowered_text),
-			summary=self._summary_for(text),
-			confidence=0.6,
-		)
 
-	@staticmethod
-	def _category_for(lowered_text: str) -> Category:
-		for category, keywords in CATEGORY_KEYWORDS:
-			if any(keyword in lowered_text for keyword in keywords):
-				return category
-		return Category.other
+--- WHY THE RESOLUTION WON (and why neither side did alone) ---
 
-	@staticmethod
-	def _priority_for(lowered_text: str) -> Priority:
-		if any(
-			keyword in lowered_text
-			for keyword in (
-				"flooding",
-				"fire",
-				"exposed wire",
-				"burst",
-				"gas leak",
-				"life-threatening",
-				"life threatening",
-				"killed",
-				"fatal",
-				"death",
-				"dead",
-				"injured",
-				"injury",
-			)
-		):
-			return Priority.high
-		if any(keyword in lowered_text for keyword in ("minor", "cosmetic")):
-			return Priority.low
-		return Priority.normal
-
-	@staticmethod
-	def _summary_for(text: str) -> str:
-		summary = " ".join(text.split())
-		if len(summary) <= 100:
-			return summary
-
-		truncated = summary[:100].rsplit(" ", 1)[0]
-		return f"{truncated}..." if truncated else f"{summary[:100]}..."
-
+The data-driven table was kept and the "lamp" fix was carried into it.
+The table makes the load-bearing order a property of one declaration
+instead of five sequential branches, which is the more valuable half.
+The keyword fix was kept because the table alone would have silently
+reintroduced the bug: taking only the loop would have left the bare
+"lamp" entry, and a report about a clamped pipe would again be filed as
+a streetlight. Adding "lamplight" was not in either original change --
+it was forced by test_rules_categories.py, which failed first against
+the narrowed keyword list and then passed, so the regression is covered
+rather than assumed.
