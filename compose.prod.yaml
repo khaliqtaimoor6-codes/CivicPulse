@@ -58,6 +58,12 @@ services:
       TRIAGE_PROVIDER: ${TRIAGE_PROVIDER:-simulated}
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-30}
       LLM_API_KEY: ${LLM_API_KEY:-}
+      # Empty LLM_BASE_URL means "not set" and keeps the provider's own default
+      # endpoint. Set it to aim the same client elsewhere, e.g.
+      # https://openrouter.ai/api/v1, and pair it with a model that host serves.
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-llama-3.1-8b-instant}
+      LLM_JSON_MODE: ${LLM_JSON_MODE:-true}
       CORS_ORIGIN: ${CORS_ORIGIN:-https://civicpulse.local}
     networks:
       - edge
