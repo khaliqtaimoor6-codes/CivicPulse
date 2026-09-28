@@ -30,8 +30,48 @@ services:
       timeout: 5s
       retries: 12
 
+  # One-shot schema migration, mirroring k8s/base/migration-job.yaml.
+  #
+  # This is deliberately a separate container rather than a step inside the
+  # backend's startup: the brief forbids schema DDL in application startup
+  # code, and the Kubernetes side already models this as a Job that must
+  # succeed before the Deployment rolls. Running `alembic upgrade head` here
+  # instead means a fresh clone needs one `docker compose up` to reach a
+  # migrated, queryable database, and the exact same migration is exercised
+  # in both deployment modes. It is idempotent: on an already-migrated volume
+  # it exits 0 immediately.
+  migrate:
+    build: ./backend
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Both are required, not optional, and Redis is deliberately included
+      # even though alembic never touches it. Settings declares database_url
+      # and redis_url with no default and get_settings() raises at import time
+      # -- which happens inside alembic's own env.py:17 -- if either is absent.
+      # k8s/base/migration-job.yaml passes the same pair for the same reason.
+      DATABASE_URL: postgresql+psycopg2://civicpulse:civicpulse_dev_password@postgres:5432/civicpulse
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend/alembic:/app/alembic
+      - ./backend/alembic.ini:/app/alembic.ini
+    command:
+      - alembic
+      - upgrade
+      - head
+    networks:
+      - internal
+
+  # Optional local model runner. It sits behind a profile so that the default
+  # `docker compose up` does not pull a multi-gigabyte image and start a
+  # service the demo never talks to. Enable it explicitly when you actually
+  # want a local model: `docker compose --profile ollama up -d`.
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.34.4
+    profiles:
+      - ollama
     restart: unless-stopped
     volumes:
       - ollama_models:/root/.ollama
@@ -54,6 +94,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: postgresql+psycopg2://civicpulse:civicpulse_dev_password@postgres:5432/civicpulse
       REDIS_URL: redis://redis:6379/0

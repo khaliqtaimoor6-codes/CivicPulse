@@ -1,0 +1,52 @@
+Rate limiter evidence
+captured: 2026-09-28T17:29:41+05:00
+commit:   b4fef7e
+target:   http://127.0.0.1:80/api  (k3d Ingress, Host: civicpulse.local)
+limit:    RATE_LIMIT_PER_MINUTE=30, from k8s/base/configmap.yaml
+client:   10.42.0.8 (traefik Pod), which is the client identity the limiter sees
+
+WHAT THIS SHOWS
+  A fixed-window counter in Redis, keyed ratelimit:<client_ip>:<unix_minute>,
+  rejects request 31 onwards within a minute with HTTP 429 and a Retry-After
+  header counting down to the end of the window. This is the behaviour
+  docs/RUNBOOK.md and the README claim; previously no artifact in this
+  directory demonstrated it.
+
+PROCEDURE
+  The minute bucket was cleared first so the count starts at zero. Only the
+  ratelimit:* keys were deleted -- the stats cache was left alone.
+
+    kubectl exec -n civicpulse deploy/redis -- redis-cli --scan --pattern 'ratelimit:*'
+
+  Then 35 POSTs were sent in quick succession from one client:
+
+    for i in $(seq 1 35); do
+      curl -s -D- -o/dev/null -X POST http://127.0.0.1:80/api/complaints \
+        -H "Host: civicpulse.local" -H 'Content-Type: application/json' \
+        -d "{\"text\":\"rate limit probe number $i unique text for this run\",\"location\":\"Probe St $i\"}"
+    done
+
+RESULT
+  Requests 1-30   -> 201 Created   (accepted and triaged)
+  Request  31     -> 429 Too Many Requests   Retry-After: 12   {"detail":"Rate limit exceeded"}
+  Request  32     -> 429 Too Many Requests   Retry-After: 12   {"detail":"Rate limit exceeded"}
+  Request  33     -> 429 Too Many Requests   Retry-After: 11   {"detail":"Rate limit exceeded"}
+  Request  34     -> 429 Too Many Requests   Retry-After: 11   {"detail":"Rate limit exceeded"}
+  Request  35     -> 429 Too Many Requests   Retry-After: 11   {"detail":"Rate limit exceeded"}
+
+  The cut-off is exactly at the configured 30, and Retry-After decreases as the
+  current minute is consumed, which is the 60 - (now % 60) term in
+  backend/app/providers/rate_limiter/redis_rate_limiter.py:22.
+
+REDIS STATE AFTER THE BURST
+  ratelimit:10.42.0.8:29843308 = 35   (ttl 49s)
+
+  The TTL confirms the window self-expires, so the limiter cannot lock a client
+  out permanently after a burst.
+
+NOTE FOR ANY LOAD TEST
+  This limit is why a k6 run against the Ingress produces mostly 429s unless
+  RATE_LIMIT_PER_MINUTE is raised first -- every k6 request comes from one
+  source address. The k6 check accepts both 201 and 429 so the run still
+  passes, but the HPA never sees real work. See "Proving the HPA scales" in
+  docs/RUNBOOK.md.

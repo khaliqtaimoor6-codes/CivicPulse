@@ -1,0 +1,61 @@
+Persistence evidence -- Kubernetes
+captured: 2026-09-28T17:29:41+05:00
+commit:   b4fef7e
+cluster:  k3d-civicpulse, k3s v1.35.5+k3s1
+image:    civicpulse-backend:dev (built from this commit and imported with
+          `k3d image import`)
+pvc:      pgdata-postgres-0   (from the Postgres StatefulSet volumeClaimTemplates)
+          redisdata
+
+WHAT THIS SHOWS
+  Deleting the Postgres Pod destroys the container and its writable layer. The
+  data survives because the StatefulSet mounts a PersistentVolumeClaim. This is
+  what k8s/base/postgres-statefulset.yaml asserts; previously no artifact in
+  this directory demonstrated it for the cluster.
+
+PROCEDURE
+
+  1. Record the count through the Ingress.
+
+       $ curl -s -H 'Host: civicpulse.local' http://127.0.0.1:80/api/stats
+        total = 25274
+
+  2. Delete the database Pod.
+
+       $ kubectl delete pod -n civicpulse postgres-0
+        pod "postgres-0" deleted from civicpulse namespace
+
+  3. Wait for the StatefulSet to recreate it. The new Pod gets the same
+     identity and reattaches the same claim.
+
+       $ kubectl get pod -n civicpulse postgres-0 -w
+        postgres-0   0/1   Terminating
+        (deleted)
+        postgres-0   0/1   Pending
+        postgres-0   0/1   ContainerCreating
+        postgres-0   1/1   Running        <-- ready again after ~10s
+
+  4. Re-read the count.
+
+       $ curl -s -H 'Host: civicpulse.local' http://127.0.0.1:80/api/stats
+        total = 25274
+
+RESULT
+  before delete : 25274
+  after  recreate: 25274
+  MATCH
+
+  The count is large because this run follows the HPA load tests in this
+  directory, which create roughly 9,500 complaints per 150-VU run.
+
+NOTES
+  - The backend is not restarted by this. The claim is that the DATABASE is
+    durable, and it is: the API is answering from the same Postgres the
+    StatefulSet rebuilt underneath it.
+  - Storage class in the local cluster is the k3d default local-path, so the
+    PV is node-local. That is fine for one node and is what a local cluster
+    gives you; it is not a claim about durability across node loss, and it
+    would not be true on a multi-node cluster using local-path.
+  - Redis uses a separate claim, redisdata, and is configured with appendonly.
+    Its contents are a cache and the rate-limit window, both rebuildable, so
+    they are not asserted here.
