@@ -240,6 +240,22 @@ jobs:
             --from-literal=LLM_API_KEY="$LLM_API_KEY" \
             --dry-run=client -o yaml | kubectl apply -f -
 
+      # k8s/base/backend-vpa.yaml is part of the base, so every overlay including
+      # prod references the VPA kind. The CRD is not a k3s or kubeadm default, so
+      # without this the very first `kubectl apply` of the overlay fails with
+      # "no matches for kind VerticalPodAutoscaler" and every later step is
+      # skipped. Pinned to a release tag rather than master so a change upstream
+      # cannot alter what a merge deploys.
+      - name: Install the VPA CustomResourceDefinition
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL \
+            "https://raw.githubusercontent.com/kubernetes/autoscaler/vertical-pod-autoscaler-1.5.0/vertical-pod-autoscaler/deploy/vpa-v1-crd-gen.yaml" \
+            | kubectl apply -f -
+          kubectl wait --for=condition=Established \
+            crd/verticalpodautoscalers.autoscaling.k8s.io --timeout=60s
+
       - name: Apply manifests
         run: kubectl apply -k k8s/overlays/prod
 

@@ -14,7 +14,8 @@ apply stops at `no matches for kind "VerticalPodAutoscaler"` and never creates
 the VPA:
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/kubernetes/autoscaler/master/vertical-pod-autoscaler/deploy/vpa-v1-crd-gen.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/autoscaler/vertical-pod-autoscaler-1.5.0/vertical-pod-autoscaler/deploy/vpa-v1-crd-gen.yaml
+kubectl wait --for=condition=Established crd/verticalpodautoscalers.autoscaling.k8s.io --timeout=60s
 ```
 
 **2. The runtime Secret.** `civicpulse-secrets` is deliberately *not* in
