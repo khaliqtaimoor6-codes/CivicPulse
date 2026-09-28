@@ -1,0 +1,67 @@
+Persistence evidence -- Docker Compose
+captured: 2026-09-28T17:29:41+05:00
+commit:   b4fef7e
+stack:    compose.yaml (dev), project name cpfresh, Docker Engine 29.8.0
+volume:   cpfresh_pgdata  ->  postgres:16-alpine  /var/lib/postgresql/data
+
+WHAT THIS SHOWS
+  A `docker compose down` followed by `docker compose up` keeps every seeded
+  complaint. The data lives in the named volume, not in the container's
+  writable layer, so removing the containers does not remove the data. This
+  is what compose.yaml:10 and compose.yaml:24 assert; previously no artifact
+  in this directory demonstrated it.
+
+PROCEDURE
+
+  1. Record the count.
+
+       curl -s http://localhost:8000/api/stats     ->  {"total": 32, ...}
+
+  2. Tear the stack down WITHOUT -v. The -v flag is what deletes named
+     volumes, so omitting it is the entire point of the test.
+
+       $ docker compose down
+        Container cpfresh-postgres-1  Removed
+        Container cpfresh-redis-1     Removed
+        Container cpfresh-backend-1   Removed
+        Container cpfresh-frontend-1  Removed
+        Container cpfresh-migrate-1   Removed
+        Network cpfresh_edge          Removed
+        Network cpfresh_internal      Removed
+
+  3. Confirm the volumes survived the teardown.
+
+       $ docker volume ls | grep cpfresh
+        cpfresh_pgdata
+        cpfresh_redisdata
+
+  4. Bring the stack back up and re-read the count.
+
+       $ docker compose up -d
+        Container cpfresh-postgres-1  Healthy
+        Container cpfresh-redis-1     Running
+        Container cpfresh-migrate-1   Exited (0)     <-- alembic upgrade head
+        Container cpfresh-backend-1   Healthy
+        Container cpfresh-frontend-1  Running
+
+       curl -s http://localhost:8000/api/stats     ->  {"total": 32, ...}
+
+RESULT
+  before down : 32
+  after  up   : 32
+  MATCH
+
+NOTES
+  - The `migrate` container exiting 0 on the second `up` is the point as much
+    as the data surviving: `alembic upgrade head` is idempotent, so an
+    already-migrated database is left alone and the backend can start
+    immediately. That is why it can safely gate the backend with
+    `depends_on: migrate: condition: service_completed_successfully`.
+  - Only the volume persists. `docker compose down -v` deletes it and the next
+    `up` starts from an empty database that has to be migrated and seeded
+    again -- which is exactly the fresh-clone path the README documents.
+
+WHAT IS NOT COVERED HERE
+  Compose-only. The Kubernetes equivalent, where the equivalent of the named
+  volume is a PersistentVolumeClaim bound to the Postgres StatefulSet, is in
+  persistence-kubernetes.txt.
