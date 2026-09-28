@@ -7,13 +7,29 @@ const baseUrl = (__ENV.BASE_URL || "http://localhost:8000").replace(/\/$/, "");
 // original 50-VU profile no longer produces enough per-pod CPU to scale out.
 // Default raised to 150 VUs; override with VUS=<n> for a lighter profile.
 const vus = Number(__ENV.VUS || 150);
+
+// Stage durations are overridable so the same script can produce both the full
+// recorded evidence run and a short profile for a live demo. The defaults below
+// are the evidence run: 2m ramp, 4m hold, 1m down = 7m. A demo run is
+// RAMP=30s HOLD=90s DOWN=30s, which still gives metrics-server time to report
+// several consecutive samples. Lowering these does not change what is measured,
+// only how long the run takes.
+const ramp = __ENV.RAMP || "2m";
 const hold = __ENV.HOLD || "4m";
+const down = __ENV.DOWN || "1m";
+
+// Ingress routing is Host-header based, so pointing BASE_URL at the k3d
+// loadbalancer's IP is only enough if the Host is set too. Prefer adding
+// `127.0.0.1 civicpulse.local` to the hosts file and running
+// BASE_URL=http://civicpulse.local; set HOST_HEADER when that is not possible
+// (CI, a container without root) so the same run is still reproducible.
+const hostHeader = __ENV.HOST_HEADER;
 
 export const options = {
 	stages: [
-		{ duration: "2m", target: vus },
+		{ duration: ramp, target: vus },
 		{ duration: hold, target: vus },
-		{ duration: "1m", target: 0 },
+		{ duration: down, target: 0 },
 	],
 	thresholds: {
 		http_req_failed: ["rate<0.05"],
@@ -41,11 +57,16 @@ function randomComplaint() {
 }
 
 export default function () {
+	const headers = { "Content-Type": "application/json" };
+	if (hostHeader) {
+		headers["Host"] = hostHeader;
+	}
+
 	const response = http.post(
 		`${baseUrl}/api/complaints`,
 		JSON.stringify(randomComplaint()),
 		{
-			headers: { "Content-Type": "application/json" },
+			headers: headers,
 			tags: { endpoint: "create-complaint" },
 		},
 	);
@@ -57,4 +78,4 @@ export default function () {
 	check(response, {
 		"complaint accepted or rate limited": (result) => result.status === 201 || result.status === 429,
 	});
-}// Placeholder.
+}

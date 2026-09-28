@@ -145,7 +145,10 @@ accuracy and latency of each path.
 ### 2. Run it on Kubernetes
 
 ```bash
-k3d cluster create civicpulse
+# The --port mapping is required, not optional: without it k3d publishes only
+# the API server (6443) and nothing can reach the Ingress from the host, so
+# `civicpulse.local` and the load test below both fail. See docs/RUNBOOK.md.
+k3d cluster create civicpulse --port "80:80@loadbalancer"
 docker build -t civicpulse-backend:dev -t civicpulse-frontend:dev backend frontend
 k3d image import civicpulse-backend:dev civicpulse-frontend:dev -c civicpulse
 kubectl apply -k k8s/overlays/dev
@@ -153,6 +156,10 @@ kubectl rollout status statefulset/postgres -n civicpulse --timeout=180s
 kubectl rollout status deployment/civicpulse-backend -n civicpulse --timeout=180s
 kubectl get hpa -n civicpulse
 ```
+
+Add `127.0.0.1 civicpulse.local` to your hosts file (on Windows,
+`C:\Windows\System32\drivers\etc\hosts`; on Linux or macOS, `/etc/hosts`) so the
+Ingress URL below resolves.
 
 Full deploy / rollback / log-reading instructions: [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
