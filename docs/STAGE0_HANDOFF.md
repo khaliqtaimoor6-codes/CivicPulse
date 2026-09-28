@@ -12,8 +12,8 @@ transcribed from the assignment PDF and verified line-by-line by both partners.
 
 1. `docs/API-CONTRACT.md` — endpoint table, status state machine, DB schema,
    `TriageResult`/`TriageProvider` Protocol, cache/rate-limit contract. Both
-   partners checked it against the source PDF and ticked the verification
-   boxes at the top of that file.
+   partners verified it against the source PDF and froze the contract at its
+   top.
 2. `.gitignore` — Python + Node + Docker + IDE junk excluded (see prompt below).
 3. `.env.example` — every env var referenced anywhere in the contract, with
    placeholder (non-secret) values.

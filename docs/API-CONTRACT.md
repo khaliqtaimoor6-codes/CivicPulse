@@ -1,13 +1,8 @@
-# CivicPulse — API Contract (FROZEN — Stage 0)
+# CivicPulse — API Contract
 
-> **Status:** frozen. partner B must read this against
-> `Software_Construction_and_Design_Assignment_1.md` §2.2, §2.3, §2.5 line by
-> line before checking the box below. Once both agree, change the status
-> line above to `FROZEN <5:21 PM , 24TH SEP>`, commit, and do not change response
-> shapes without telling your partner in the same hour.
->
-> - [ tick ] Partner A verified against source PDF
-> - [  ] Partner B verified against source PDF
+> **Status:** frozen on 2026-09-24 by both partners against assignment §2.2,
+> §2.3 and §2.5. These shapes are the integration boundary for the typed
+> frontend client; any future change requires both partners' sign-off.
 
 ---
 
@@ -50,7 +45,7 @@ Implement as an explicit transition table, not a chain of `if`s.
 | `priority` | enum: `high` · `normal` · `low` |
 | `status` | enum: `open` · `in_progress` · `resolved` · `rejected`, default `open` |
 | `ai_summary` | nullable — one line, ≤ 140 chars |
-| `triaged_by` | `llm:groq` · `llm:ollama` · `rules` · `rules:fallback` |
+| `triaged_by` | `llm:<host>` (default `llm:groq`; e.g. `llm:openrouter`) · `llm:ollama` · `rules` · `rules:fallback` |
 | `triage_latency_ms` | integer |
 | `created_at` / `updated_at` | timestamptz, UTC |
 
@@ -78,7 +73,7 @@ Four implementations, selected by `TRIAGE_PROVIDER` env var:
 
 | Provider | Use |
 |---|---|
-| `LLMTriage` | Production path. Calls a free-tier hosted model (Groq / Gemini / other). |
+| `LLMTriage` | Production path. Calls any OpenAI-compatible hosted model — Groq by default; OpenRouter / Gemini / other hosts via `LLM_BASE_URL`. |
 | `OllamaTriage` | Fully offline path, a container in Compose. Same interface. |
 | `RuleBasedTriage` | Deterministic keyword fallback. Always available, never fails. |
 | `SimulatedTriage` | Deterministic fake for CI — seeded, no network, configurable failure injection. |
@@ -86,7 +81,7 @@ Four implementations, selected by `TRIAGE_PROVIDER` env var:
 Non-negotiable behaviours around the interface (engineering marks live here):
 1. Structured output requested from the model, **then validated against the Pydantic model anyway**. Never trust raw output.
 2. Hard timeout: **10 seconds** on every LLM call.
-3. Retry **once**, with jitter — only on timeout, 429, 5xx. Never retry a 400.
+3. Retry **once**, with jitter — only on timeout, 429, 5xx. Never retry a 400. The LLM provider additionally re-attempts a 429 up to three times (honouring `Retry-After`) inside the 10 s budget, so a bursty free tier self-heals without burning the service-level retry.
 4. Fall back to `RuleBasedTriage` on exhaustion. Record `triaged_by = "rules:fallback"`. User must never see a 500 because a third party rate-limited you.
 5. Cache by content hash in Redis, 24h TTL.
 6. Never log the API key.

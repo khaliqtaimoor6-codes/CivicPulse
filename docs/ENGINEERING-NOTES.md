@@ -151,7 +151,10 @@ properties, all of which are enforceable while the model's judgement is not:
    10-second cap (`backend/app/services/triage_service.py:19`), one retry with
    jitter and only on retryable classes — timeout, 429, 5xx
    (`triage_service.py:80-92`, `:69`) — then fall back to `RuleBasedTriage` and
-   record `triaged_by = "rules:fallback"`.
+   record `triaged_by = "rules:fallback"`. On top of that, the hosted provider
+   re-attempts a 429 up to three times, honouring `Retry-After`
+   (`backend/app/providers/triage/llm.py:119-129`), so a bursty free tier is
+   absorbed before the service-level retry is even spent.
 
 So the LLM is an *optimisation* and the rule-based provider is the *contract*.
 Correctness lives in the envelope, not in the model. The test the brief asks for
@@ -267,10 +270,11 @@ call a hosted model.
 **The resolution, in Compose: the backend is on both networks.**
 `postgres` and `redis` join `internal` only; `frontend` joins `edge` only; the
 backend joins **both**. Being attached to `edge` — which is not `internal` —
-is what preserves the backend's outbound path to Groq, while its attachment to
+is what preserves the backend's outbound path to a hosted LLM (Groq by
+default, OpenRouter in the demo deployment), while its attachment to
 `internal` is what lets it reach the datastores. The backend is the only
-container that bridges the two segments, which is the same reason it is the only
-service holding both the database DSN and the API key.
+container that bridges the two segments, which is the same reason it is the
+only service holding both the database DSN and the API key.
 
 **In Kubernetes the same result is achieved by omission rather than by
 attachment.** There are no "internal" network flags, so
@@ -426,9 +430,15 @@ settings.
   and only its `TimeoutError` is treated as retryable; an `httpx` timeout below
   10 seconds would raise an exception that is not recognised as retryable and
   would skip the retry.
-- `httpx` was promoted from a dev-only dependency to a runtime dependency. It was
-  previously present only transitively through `groq`, which is not a safe thing
-  to import at runtime.
+- `httpx` is a direct runtime dependency (`backend/pyproject.toml`), and the
+  hosted `LLMTriage` was rewritten on it specifically because the Groq SDK
+  (now removed as a dependency) forced its own `/openai/v1/chat/completions`
+  path onto every host — which breaks OpenAI-compatible hosts that serve chat
+  completions at `/api/v1`, such as OpenRouter. A plain `POST` leaves the
+  endpoint under the caller's control, and the provider is now host-agnostic,
+  selected by `LLM_BASE_URL` / `LLM_MODEL` / `LLM_JSON_MODE` and named in
+  `triaged_by` by its host (`llm:groq` default, `llm:openrouter` when pointed
+  at OpenRouter).
 
 ## Measured evidence
 

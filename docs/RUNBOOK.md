@@ -293,8 +293,12 @@ kubectl logs deployment/civicpulse-backend -n civicpulse --since=15m \
 Run the `curl` check from your host against the port-forward above; the backend
 image ships no `curl`, so `kubectl exec ... -- curl` will not work.
 
-Then verify `TRIAGE_PROVIDER` and the Groq API key in the runtime Secret and
-Deployment environment. Do not print the Secret value:
+Then verify `TRIAGE_PROVIDER` and the hosted-provider configuration: the API
+key lives in the runtime Secret (`LLM_API_KEY`), while `LLM_BASE_URL` /
+`LLM_MODEL` / `LLM_JSON_MODE` belong in the ConfigMap. The key and host
+together decide which provider is actually called — `llm:groq` by default,
+`llm:openrouter` when `LLM_BASE_URL` points at OpenRouter. Do not print the
+Secret value:
 
 ```bash
 kubectl exec -n civicpulse deployment/civicpulse-backend -- printenv TRIAGE_PROVIDER
