@@ -208,6 +208,39 @@ stack or the Kubernetes manifests.
 
 ## Roll Back
 
+`kubectl rollout undo` can only move to a ReplicaSet that still exists, so on
+a cluster that has only ever had one revision there is nothing to roll back to
+and the command fails. Check first:
+
+```bash
+kubectl rollout history deployment/civicpulse-backend -n civicpulse
+```
+
+If that lists only revision 1, the rollback history has to be created once by
+deploying the previous version explicitly, which leaves revision 2 as the
+thing to undo back to:
+
+```bash
+# 1. Move to the version you want to roll back FROM. Use an immutable digest
+#    in production; a tag is fine for a rehearsal.
+kubectl set image deployment/civicpulse-backend -n civicpulse \
+  backend=civicpulse-backend:<previous-tag>
+kubectl rollout status deployment/civicpulse-backend -n civicpulse
+
+# 2. The rollback is now available, and reverts to the prior ReplicaSet.
+kubectl rollout undo deployment/civicpulse-backend -n civicpulse
+kubectl rollout status deployment/civicpulse-backend -n civicpulse
+```
+
+Verify the rollback actually changed the running code rather than only the pod
+names, by checking the image that is now serving and confirming the cluster
+matches Git:
+
+```bash
+kubectl get deployment civicpulse-backend -n civicpulse \
+  -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+```
+
 For an active incident, use the fast imperative rollback:
 
 ```bash
