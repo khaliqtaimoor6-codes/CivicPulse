@@ -25,4 +25,27 @@ spec:
           env:
             - name: BACKEND_HOST
               value: civicpulse-backend.civicpulse.svc.cluster.local:8000
-          # Add resources and readiness/liveness probes in the later hardening stage.
+          # nginx serves the SPA on 80; a response from "/" means the process is
+          # alive and proxying. liveness restarts a wedged nginx; readiness
+          # keeps the pod out of the Service until it can serve.
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
