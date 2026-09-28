@@ -29,9 +29,9 @@ fall over when the clever one is rate-limited, slow, or simply wrong.
 
 | Component | State |
 |---|---|
-| Backend (FastAPI, 4 layers) | 9/9 contract endpoints, 23 tests, coverage gate ≥ 65% |
-| Frontend (React 18 + Vite + TS) | Submit / Dashboard / Stats, 5 component tests |
-| Triage providers | `llm:groq`, `llm:ollama`, `rules`, `simulated` + `rules:fallback` |
+| Backend (FastAPI, 4 layers) | 9/9 contract endpoints, 54 tests, coverage gate ≥ 65% |
+| Frontend (React 18 + Vite + TS) | Submit / Dashboard / Stats, 115 component tests |
+| Triage providers | `llm:<host>` (hosted: Groq default, OpenRouter), `llm:ollama`, `rules`, `simulated` + `rules:fallback` |
 | Docker / Compose | 2 images multi-stage non-root, 2 networks, 3 volumes |
 | Kubernetes | Namespace, 2 Deployments, StatefulSet+PVC, 4 ClusterIP Services, Ingress, HPA, PDB, VPA |
 | CI | 7 jobs + `CI` aggregate gate, all green on `dev` |
@@ -42,6 +42,12 @@ Run the submission lint for the authoritative check:
 ```bash
 python scripts/check_submission.py
 ```
+
+One caveat: the lint fails if a real `.env` is present in the working tree —
+that is deliberate, since the section-5.3 `-20` deduction exists precisely to
+stop a local credentials file from ever sneaking into a submission. For the
+graded run, run it from a clean clone, or move `.env` away first: Compose
+reads the same variables from the shell environment, so nothing breaks.
 
 ---
 
@@ -60,7 +66,7 @@ graph TB
         OL["ollama<br/>llama3.2:1b<br/>offline triage"]
     end
 
-    LLM["Groq<br/>hosted LLM<br/>(optional)"]
+    LLM["Groq / OpenRouter<br/>hosted LLM<br/>(TRIAGE_PROVIDER=llm)"]
 
     FE -->|"HTTP /api"| BE
     BE --> PG
@@ -89,7 +95,7 @@ and `backend → postgres` stays **allowed**. Re-run it yourself with the
 commands at the top of that file.
 
 That `internal: true` also means the backend cannot reach the internet, so a
-hosted `llm:groq` call has nowhere to go. That trade-off and its resolution are
+hosted LLM call has nowhere to go. That trade-off and its resolution are
 written up in [ADR 0004](docs/adr/0004-pii-and-data-governance.md) and
 [ADR 0001](docs/adr/0001-provider-interface.md).
 
@@ -138,9 +144,12 @@ docker compose exec ollama ollama pull llama3.2:1b   # ~1.3 GB, once
 docker compose up -d backend
 ```
 
-For a hosted model, set `TRIAGE_PROVIDER=llm` and put a free-tier Groq key in
-`LLM_API_KEY` in `.env`. See [docs/TRIAGE.md](docs/TRIAGE.md) for measured
-accuracy and latency of each path.
+For a hosted model, set `TRIAGE_PROVIDER=llm` and run
+`bash scripts/set-llm-env.sh` to enter the API key at a hidden prompt (the key
+is written mode-600 into the gitignored `.env`, never onto a command line).
+The provider defaults to Groq; to use OpenRouter instead, set `LLM_BASE_URL`
+and a `:free` `LLM_MODEL` in `.env` — see [docs/TRIAGE.md](docs/TRIAGE.md) for
+measured accuracy and latency of each path.
 
 ### 2. Run it on Kubernetes
 
@@ -174,7 +183,7 @@ Base URL in development is `http://localhost:8000`; through the Ingress it is
 |---|---|---|
 | `POST` | `/api/complaints` | Validate → triage → persist. `201`. `400` with field-level errors. `429` + `Retry-After` when rate limited. |
 | `GET` | `/api/complaints` | Filter by `category`, `priority`, `status`; paginate with `page`, `page_size` (≤ 100); returns `total`. |
-| `GET` | `/api/complaints/{id}` | `200` / `404`. Includes the cached triage result. |
+| `GET` | `/api/complaints/{id}` | `200` / `404`. Full complaint including the stored triage fields (`category`, `priority`, `ai_summary`, `triaged_by`). |
 | `PATCH` | `/api/complaints/{id}/status` | Enforces the transition table. Invalid transition → `409` naming the attempted transition. |
 | `GET` | `/api/stats` | Aggregates by category and priority. Redis read-through cache, TTL 30 s, `X-Cache: HIT\|MISS`. Invalidated on write. |
 | `GET` | `/api/meta/providers` | Active provider plus the last 20 triage outcomes (provider, latency ms, fallback y/n). |
@@ -206,7 +215,9 @@ reliability measurable rather than asserted:
 
 | Value | Meaning |
 |---|---|
-| `llm:groq` | Hosted model answered and passed schema validation |
+| `llm:groq` | Hosted model answered via Groq (the default host) and passed schema validation |
+| `llm:openrouter` | Hosted model answered via OpenRouter and passed schema validation |
+| `llm:<host>` | Any other OpenAI-compatible host, named by its hostname |
 | `llm:ollama` | Local model answered and passed schema validation |
 | `rules` | Deterministic keyword rules decided directly |
 | `rules:fallback` | The model was tried and failed; rules decided instead |
@@ -272,18 +283,18 @@ civicpulse/
 │   │   └── providers/       # outbound: triage/, cache/, rate_limiter/
 │   ├── alembic/versions/    # schema, no DDL in startup code
 │   ├── scripts/seed.py      # idempotent, 30 complaints
-│   ├── tests/               # 23 tests
+│   ├── tests/               # 54 tests
 │   └── Dockerfile · .dockerignore · pyproject.toml
 ├── frontend/
 │   ├── src/{components,pages,api}/
-│   ├── tests/               # 5 component tests
+│   ├── tests/               # 115 component tests
 │   └── Dockerfile · .dockerignore · nginx.conf · package.json
 ├── k8s/
 │   ├── base/                # namespace, deployments, statefulset, ingress, configmap, secret, hpa, pdb, vpa
 │   └── overlays/{dev,prod}/
 ├── load/k6-script.js
 ├── docs/                    # notes, runbook, ADRs, evidence
-├── scripts/check_submission.py
+├── scripts/check_submission.py · set-llm-env.sh
 ├── .github/workflows/{ci,cd,release}.yml
 ├── compose.yaml · compose.prod.yaml
 └── .env.example · .gitignore · README.md · LICENSE

@@ -6,15 +6,51 @@ the same `TriageResult`, so they are interchangeable at the factory.
 
 | Provider | `triaged_by` | API key | Needs network | Notes |
 | --- | --- | --- | --- | --- |
-| `llm` | `llm:groq` | yes (`LLM_API_KEY`) | yes | External Groq API, best quality |
+| `llm` | `llm:groq` · `llm:openrouter` · `llm:<host>` | yes (`LLM_API_KEY`) | yes | Any OpenAI-compatible `/chat/completions` host; Groq by default, OpenRouter demonstrated below |
 | `ollama` | `llm:ollama` | no | no | Local model, fully offline |
 | `rules` | `rules:*` | no | no | Deterministic keyword matching |
 | `simulated` | `simulated` | no | no | Fixed canned responses |
 
 Every provider is wrapped by `TriageService`, which enforces a 10-second
-timeout per call, caches results in Redis, and degrades to `rules:fallback` on
-failure. A `rules:fallback` value in the database means the selected provider
-did not answer — it does not mean the provider returned a low-priority result.
+timeout per call, caches results in Redis (24 h TTL), and degrades to
+`rules:fallback` on failure. A `rules:fallback` value in the database means the
+selected provider did not answer — it does not mean the provider returned a
+low-priority result.
+
+## Hosted `llm` provider (Groq / OpenRouter / any OpenAI-compatible host)
+
+One `httpx` client in `backend/app/providers/triage/llm.py` POSTs
+`{LLM_BASE_URL}/chat/completions`. Unset, it uses Groq's own endpoint
+(`https://api.groq.com/openai/v1`, the project's default). The same client
+moves to any host that speaks the OpenAI chat-completions shape:
+
+```bash
+LLM_BASE_URL=https://openrouter.ai/api/v1
+LLM_MODEL=nvidia/nemotron-3-super-120b-a12b:free   # a `:free` model id
+LLM_JSON_MODE=true
+```
+
+- `LLM_JSON_MODE=false` drops `response_format` for hosts that reject it with a
+  400; the prompt already asks for bare JSON and the Pydantic check is the
+  authority either way.
+- The provider's name — and therefore `triaged_by` in the database — is
+  derived from the host (`llm:groq`, `llm:openrouter`, …), so recorded evidence
+  names whoever actually answered rather than guessing.
+- Enter the key at a hidden prompt with `bash scripts/set-llm-env.sh`; it is
+  written mode-600 into the gitignored `.env`, never onto a command line.
+
+**Measured on 2026-09-28 against OpenRouter's free tier**
+(`nvidia/nemotron-3-super-120b-a12b:free`): two live classifications succeeded
+end-to-end with `triaged_by = llm:openrouter`, both returning correct
+categories and priorities for realistic complaints. Latency was 6.5–8.9 s —
+the free tier is an uncached 120B model, so it is slow but functional. Free
+congestion surfaces as `429` responses; the provider re-attempts them up to
+three times honouring `Retry-After` and staying inside the 10 s budget, and
+`TriageService` still falls back to `rules:fallback` if the window does not
+clear. Free model catalogues churn — check <https://openrouter.ai/models>
+before a demo and be ready for congestion, which is why the demo guidance
+below recommends a deterministic provider for the recording unless a live
+model pass is wanted explicitly.
 
 ## Ollama (local, key-free)
 
@@ -62,8 +98,8 @@ the model began echoing the categories from the examples. The shipped prompt is
 therefore the category-defining variant.
 
 This is a capability limit of a 1B model, not a prompt problem. It is the
-concrete cost of the fully-offline path, and it is the reason `llm:groq` remains
-the default recommendation when quality matters.
+concrete cost of the fully-offline path, and it is the reason the hosted `llm`
+provider remains the default recommendation when quality matters.
 
 ### Known fix path
 

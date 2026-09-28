@@ -6,7 +6,9 @@ metadata:
 data:
   # Triage implementation: llm | ollama | rules | simulated
   #
-  #   llm       - external Groq API. Requires the LLM_API_KEY Secret.
+  #   llm       - external OpenAI-compatible API. Requires the LLM_API_KEY
+  #               Secret. Defaults to Groq; uncomment LLM_BASE_URL below to use
+  #               another host. Reported as triaged_by="llm:<host>".
   #   ollama    - local Ollama model. No API key and no outbound internet
   #               required, which makes it the working key-free alternative to
   #               `llm`. Reported as triaged_by="llm:ollama".
@@ -25,5 +27,15 @@ data:
   # Service exists in this namespace.
   OLLAMA_BASE_URL: http://ollama:11434
   OLLAMA_MODEL: llama3.2:1b
+
+  # Only read when TRIAGE_PROVIDER=llm. Left commented out so an unset value
+  # cannot override the provider's own default endpoint; uncomment and edit to
+  # use a different OpenAI-compatible host.
+  # LLM_BASE_URL: https://openrouter.ai/api/v1
+  # Model id for that host. Must be a model the host actually serves, e.g. an
+  # OpenRouter `:free` model id.
+  # LLM_MODEL: replace_with_a_free_model_id
+  # Set to "false" if the chosen model rejects response_format with a 400.
+  # LLM_JSON_MODE: "true"
 
   RATE_LIMIT_PER_MINUTE: "30"

@@ -103,10 +103,16 @@ services:
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:1b}
       # Read from the host .env only when TRIAGE_PROVIDER=llm. Passed through
-      # here so the hosted Groq path documented in the README actually works in
-      # the dev stack; compose.prod.yaml already wires the same key. The value
-      # is never committed -- it comes from the environment at up-time.
+      # here so the hosted path documented in the README actually works in the
+      # dev stack; compose.prod.yaml wires the same variables. The key is never
+      # committed -- it comes from the environment at up-time.
       LLM_API_KEY: ${LLM_API_KEY:-}
+      # Empty LLM_BASE_URL means "not set" and keeps the provider's own default
+      # endpoint. Set it to aim the same client elsewhere, e.g.
+      # https://openrouter.ai/api/v1, and pair it with a model that host serves.
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-llama-3.1-8b-instant}
+      LLM_JSON_MODE: ${LLM_JSON_MODE:-true}
       RATE_LIMIT_PER_MINUTE: 30
       CORS_ORIGIN: http://localhost:5173
     # Development only. Mounting the source lets `uvicorn --reload` below pick

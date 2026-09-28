@@ -26,7 +26,9 @@ in `get_triage_provider`. The implemented values are:
 	CI execution without network calls.
 - `rules`, implemented by `RuleBasedTriage`, for local deterministic
 	classification.
-- `llm`, implemented by `LLMTriage` using the Groq client.
+- `llm`, implemented by `LLMTriage` — an OpenAI-compatible `httpx` client that
+	defaults to Groq and can target any `/chat/completions` host via
+	`LLM_BASE_URL` (e.g. OpenRouter, reported as `triaged_by = "llm:openrouter"`).
 
 `TriageService` receives the selected provider through this interface and
 uses `RuleBasedTriage` as its documented fallback when the primary provider
@@ -36,7 +38,7 @@ the complaint route and makes the boundary explicit for future providers.
 ## Consequences
 
 The system is decoupled from any one AI provider: the service depends on the
-small protocol and result model rather than Groq-specific calls. Tests can
+small protocol and result model rather than SDK-specific calls. Tests can
 select `TRIAGE_PROVIDER=simulated` and exercise complaint workflows without
 network access or an LLM key. The fallback path is visible in the service and
 can be tested independently, and a future provider can be added by

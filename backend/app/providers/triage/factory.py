@@ -12,10 +12,15 @@ def get_triage_provider(settings: Settings) -> TriageProvider:
 			# Names the variable that actually selects the provider, not a
 			# LLM_TRIAGE_PROVIDER that exists nowhere in the codebase.
 			raise ValueError("TRIAGE_PROVIDER=llm requires LLM_API_KEY")
-		return LLMTriage(api_key=settings.llm_api_key)
+		return LLMTriage(
+			api_key=settings.llm_api_key,
+			model=settings.llm_model,
+			base_url=settings.llm_base_url,
+			json_mode=settings.llm_json_mode,
+		)
 	if settings.triage_provider == "ollama":
-		# Deliberately key-free: this is the local/offline path, so there is
-		# no LLM_API_KEY check here the way the groq branch has one.
+			# Deliberately key-free: this is the local/offline path, so there is
+			# no LLM_API_KEY check here the way the llm branch has one.
 		return OllamaTriage(
 			base_url=settings.ollama_base_url,
 			model=settings.ollama_model,

@@ -1,75 +1,49 @@
-# React + TypeScript + Vite
+# CivicPulse Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 18 + Vite + TypeScript SPA for Citizen complaint intake and the
+operations dashboard. It is built once and served by `nginx:alpine` from the
+multi-stage image in this directory.
 
-Currently, two official plugins are available:
+## Routes
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+| Path | View | What it does |
+| --- | --- | --- |
+| `/` | Submit | Free-text complaint, location, optional contact. Mirrors the server's validation, renders the loading state honestly, and shows the returned category, priority, AI summary and the provider that produced it. |
+| `/dashboard` | Dashboard | Paginated, filterable complaint list (category, priority, status). Operator can advance status; an invalid transition surfaces the server's `409` message verbatim. |
+| `/stats` | Stats | Aggregate counts by category and priority, plus the cache-hit state read from the `X-Cache` header. |
 
-## React Compiler
+## Runtime configuration
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+API calls are relative (`/api/...`) and Nginx proxies that prefix to the
+backend at container start, resolving `BACKEND_HOST` from the environment (see
+`nginx.conf` and `docs/adr/0002-frontend-runtime-config.md`). No absolute
+backend URL is ever baked into the bundle, so one image runs in any
+environment.
 
-## Expanding the ESLint configuration
+## Scripts
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+npm run dev          # Vite dev server (HMR) on :5173
+npm run build        # tsc -b && vite build
+npm run lint         # ESLint
+npm run test         # Vitest component tests
+npm run check:openapi # drift-check src/api/types.ts against a live /openapi.json
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+## Contract checking
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+`check:openapi` proves the typed client has not rotted against the backend's
+OpenAPI schema. It needs a running API:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+curl -s http://localhost:8000/openapi.json -o /tmp/openapi.json \
+  && node scripts/check-openapi-drift.js
 ```
+
+The CI `test-backend` job boots the API and runs this check automatically.
+
+## Tests
+
+115 Vitest tests with Testing Library (`npm run test`), covering the submit
+form, dashboard pagination/filtering, status transitions including the `409`
+message, the stats view's cache badge, and the error boundary.
