@@ -120,12 +120,44 @@ jobs:
           image: ghcr.io/${{ github.repository_owner }}/civicpulse-frontend:${{ github.sha }}
           format: cyclonedx-json
           output-file: frontend-sbom.cdx.json
+      # `set -euo pipefail` matters here. The jq call sits inside a command
+      # substitution inside an echo, so without it a jq failure is swallowed and
+      # the step still reports success while writing an empty value. That is
+      # exactly what happened: the single-quoted string '.\"containerimage.digest\"'
+      # passes the backslashes through to jq, which fails to compile, so both
+      # digests were published empty.
+      #
+      # An empty digest is not caught downstream either. `kustomize edit set image
+      # "repo@"` exits 0 and simply drops the tag, and kustomize's implicit
+      # default tag is `placeholder` -- so the manifests rendered
+      # `...civicpulse-backend:placeholder`, apply succeeded, and the deploy
+      # failed minutes later on ImagePullBackOff with "0 of 2 updated replicas"
+      # and no hint that a digest had ever gone missing.
       - name: Publish digests as job outputs
         id: digests
         shell: bash
         run: |
-          echo "backend_digest=$(jq -r '.\"containerimage.digest\"' backend-metadata.json)" >> "$GITHUB_OUTPUT"
-          echo "frontend_digest=$(jq -r '.\"containerimage.digest\"' frontend-metadata.json)" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          read_digest() {
+            # The metadata key contains dots, so it needs bracket notation.
+            # `.\"containerimage.digest\"` is a jq compile error, not an escape.
+            local file="$1" name="$2" value
+            value="$(jq -r '.["containerimage.digest"]' "$file")"
+            if [[ ! "$value" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::$name digest is '${value}', expected sha256:<64 hex> from $file" >&2
+              jq -c 'keys' "$file" >&2 || true
+              return 1
+            fi
+            printf '%s' "$value"
+          }
+          backend_digest="$(read_digest backend-metadata.json backend)"
+          frontend_digest="$(read_digest frontend-metadata.json frontend)"
+          {
+            echo "backend_digest=$backend_digest"
+            echo "frontend_digest=$frontend_digest"
+          } >> "$GITHUB_OUTPUT"
+          echo "published backend  $backend_digest"
+          echo "published frontend $frontend_digest"
       - uses: actions/upload-artifact@v4
         with:
           name: image-sboms-${{ github.sha }}
@@ -188,18 +220,54 @@ jobs:
 
       - name: Promote immutable image digests
         working-directory: k8s/overlays/prod
+        shell: bash
         env:
           BACKEND_DIGEST: ${{ needs.build-push.outputs.backend_digest }}
           FRONTEND_DIGEST: ${{ needs.build-push.outputs.frontend_digest }}
         run: |
           set -euo pipefail
+          # Same guard as in the build job, and deliberately repeated: these are
+          # two different jobs, and this is the last point at which a wrong image
+          # can be caught before it reaches a cluster. An empty digest makes
+          # `kustomize edit set image "repo@"` exit 0 while dropping the tag,
+          # and kustomize then renders the implicit default `:placeholder` -- so
+          # apply succeeds and the job fails later on ImagePullBackOff with
+          # "0 of 2 updated replicas" and nothing pointing at the real cause.
+          for pair in "backend:${BACKEND_DIGEST}" "frontend:${FRONTEND_DIGEST}"; do
+            name="${pair%%:*}"; digest="${pair#*:}"
+            if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::build-push did not publish a $name digest (got '${digest}')" >&2
+              exit 1
+            fi
+          done
           kustomize edit set image \
             "ghcr.io/${{ github.repository_owner }}/civicpulse-backend@${BACKEND_DIGEST}"
           kustomize edit set image \
             "ghcr.io/${{ github.repository_owner }}/civicpulse-frontend@${FRONTEND_DIGEST}"
+
+          # Verify the rendered manifests rather than trusting the exit code, so
+          # a digest that is present but not actually applied is still caught.
+          # Parsed with python3 rather than yq so this depends only on what an
+          # ubuntu runner is guaranteed to have.
+          kustomize build . > "$RUNNER_TEMP/rendered.yaml"
+          python3 - "$RUNNER_TEMP/rendered.yaml" <<'PY'
+          import sys, yaml
+          want = {}
+          for doc in yaml.safe_load_all(open(sys.argv[1])):
+              if not doc or doc.get('kind') != 'Deployment':
+                  continue
+              for c in doc['spec']['template']['spec']['containers']:
+                  if c['name'] in ('backend', 'frontend'):
+                      want[c['name']] = c['image']
+          bad = [f"{n} -> {i}" for n, i in want.items() if '@sha256:' not in str(i)]
+          if bad or len(want) != 2:
+              print(f"::error::not digest-pinned: {bad or 'a workload is missing'}",
+                    file=sys.stderr)
+              sys.exit(1)
+          for n, i in sorted(want.items()):
+              print(f"  {n} -> {i}")
+          PY
           echo "deployed commit ${GITHUB_SHA} as immutable digests:"
-          echo "  backend  ${BACKEND_DIGEST}"
-          echo "  frontend ${FRONTEND_DIGEST}"
 
       # Secret before apply, matching the ordering the manifests require: the
       # deployments reference civicpulse-secrets, so applying them first would
@@ -260,11 +328,31 @@ jobs:
         run: kubectl apply -k k8s/overlays/prod
 
       - name: Wait for rollouts
+        shell: bash
         run: |
-          kubectl rollout status statefulset/postgres -n civicpulse --timeout=180s
-          kubectl rollout status deployment/redis -n civicpulse --timeout=180s
-          kubectl rollout status deployment/civicpulse-backend -n civicpulse --timeout=180s
-          kubectl rollout status deployment/civicpulse-frontend -n civicpulse --timeout=180s
+          set -uo pipefail
+          for target in statefulset/postgres deployment/redis \
+                        deployment/civicpulse-backend deployment/civicpulse-frontend; do
+            if kubectl rollout status "$target" -n civicpulse --timeout=180s; then
+              continue
+            fi
+            # "timed out waiting for the condition" says nothing about why, and
+            # the causes are completely different bugs: ImagePullBackOff, missing
+            # Secret keys, a probe that never passes, a crash on boot. Dump the
+            # real reason instead of leaving it to be guessed at.
+            echo "::group::why $target never became ready"
+            kubectl get pods -n civicpulse -o wide || true
+            kubectl get events -n civicpulse --sort-by=.lastTimestamp | tail -25 || true
+            kubectl describe -n civicpulse "${target##*/}" 2>/dev/null | sed -n '/Conditions:/,$p' || true
+            prefix="${target##*/}"
+            for pod in $(kubectl get pods -n civicpulse -o name | grep "/${prefix}"); do
+              echo "--- $pod ---"
+              kubectl describe -n civicpulse "$pod" | sed -n '/^Events:/,$p' || true
+              kubectl logs -n civicpulse "$pod" --tail=40 --all-containers 2>&1 || true
+            done
+            echo "::endgroup::"
+            exit 1
+          done
 
       # Postgres is up at this point but the schema is not: nothing else in the
       # deploy path runs alembic, and the API smoke test below POSTs a
